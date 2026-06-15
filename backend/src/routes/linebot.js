@@ -77,10 +77,12 @@ const HELP_MSG =
   '賣 0050 50 160\n' +
   '（格式：買/賣 代號 股數 單價 [手續費]）\n' +
   '名稱自動帶入，不用手打\n\n' +
-  '多筆請換行，一次送出：\n' +
-  '買 0050 100 145.2\n' +
-  '買 00878 200 19.5\n' +
-  '賣 2330 1 850\n\n' +
+  '日期可選填（不填用今天）：\n' +
+  '買 2026-01-15 0050 100 145.2 20\n\n' +
+  '多筆換行一次送出：\n' +
+  '買 2026-01-15 0050 100 145.2\n' +
+  '買 2026-03-10 00878 200 19.5\n' +
+  '賣 2026-06-01 2330 1 850\n\n' +
   '【新增配息】\n' +
   '配息 0050 1.5 255\n' +
   '（格式：配息 代號 每股金額 股數）\n\n' +
@@ -141,10 +143,11 @@ async function handleMessage(event) {
   }
 
   // 新增買賣交易（單筆或多筆，每行一筆）
-  // 格式 A（含名稱）：買 0050 元大台灣50 100 145.2 [20]
-  // 格式 B（免名稱）：買 0050 100 145.2 [20]
-  const TRADE_A = /^(買|賣)\s+(\S+)\s+([^\d]\S*)\s+(\d+)\s+([\d.]+)(?:\s+([\d.]+))?$/
-  const TRADE_B = /^(買|賣)\s+(\S+)\s+(\d+)\s+([\d.]+)(?:\s+([\d.]+))?$/
+  // 格式 A（含名稱）：買 [YYYY-MM-DD] 0050 元大台灣50 100 145.2 [手續費]
+  // 格式 B（免名稱）：買 [YYYY-MM-DD] 0050 100 145.2 [手續費]
+  const DATE_RE = /\d{4}-\d{2}-\d{2}/
+  const TRADE_A = /^(買|賣)\s+(?:(\d{4}-\d{2}-\d{2})\s+)?(\S+)\s+([^\d]\S*)\s+(\d+)\s+([\d.]+)(?:\s+([\d.]+))?$/
+  const TRADE_B = /^(買|賣)\s+(?:(\d{4}-\d{2}-\d{2})\s+)?(\S+)\s+(\d+)\s+([\d.]+)(?:\s+([\d.]+))?$/
 
   const tradeLines = text.split('\n').map(l => l.trim()).filter(l => TRADE_A.test(l) || TRADE_B.test(l))
   if (tradeLines.length > 0) {
@@ -152,19 +155,20 @@ async function handleMessage(event) {
     for (const line of tradeLines) {
       const mA = line.match(TRADE_A)
       const mB = line.match(TRADE_B)
-      let action, code, name, shares, price, fee
+      let action, date, code, name, shares, price, fee
       if (mA) {
-        [, action, code, name, shares, price, fee] = mA
+        [, action, date, code, name, shares, price, fee] = mA
       } else {
-        [, action, code, shares, price, fee] = mB
+        [, action, date, code, shares, price, fee] = mB
         const info = await getStockInfo(code)
         name = info.name ?? code
       }
       try {
+        const txDate = date || today
         db.prepare(`INSERT INTO transactions (date, code, name, type, shares, price, fee) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-          .run(today, code.toUpperCase(), name, action === '買' ? 'buy' : 'sell', parseInt(shares), parseFloat(price), fee ? parseFloat(fee) : 0)
+          .run(txDate, code.toUpperCase(), name, action === '買' ? 'buy' : 'sell', parseInt(shares), parseFloat(price), fee ? parseFloat(fee) : 0)
         const total = (parseInt(shares) * parseFloat(price) + (fee ? parseFloat(fee) : 0)).toLocaleString()
-        results.push(`✅ ${action} ${code} ${name}  ${shares}股 × ${price} = ${total}`)
+        results.push(`✅ ${action} ${code} ${name}  ${shares}股 × ${price} = ${total} (${txDate})`)
       } catch (e) {
         results.push(`❌ ${action} ${code} 失敗：${e.message}`)
       }
