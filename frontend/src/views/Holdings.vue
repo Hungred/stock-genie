@@ -1,18 +1,121 @@
 <script setup>
-import { onMounted } from 'vue'
+import { onMounted, computed } from 'vue'
 import { usePortfolioStore } from '../stores/portfolio'
 import { storeToRefs } from 'pinia'
+import VChart from 'vue-echarts'
+import { use } from 'echarts/core'
+import { CanvasRenderer } from 'echarts/renderers'
+import { PieChart, BarChart } from 'echarts/charts'
+import {
+  TitleComponent, TooltipComponent, LegendComponent,
+  GridComponent, DatasetComponent,
+} from 'echarts/components'
+
+use([CanvasRenderer, PieChart, BarChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent, DatasetComponent])
 
 const store = usePortfolioStore()
 const { holdings, loading } = storeToRefs(store)
 
 onMounted(() => store.fetchHoldings())
+
+// 圓餅圖：持股市值佔比
+const pieOption = computed(() => ({
+  backgroundColor: 'transparent',
+  tooltip: {
+    trigger: 'item',
+    formatter: (p) => `${p.name}<br/>現值：${p.value.toLocaleString()} 元<br/>佔比：${p.percent}%`,
+  },
+  legend: {
+    orient: 'vertical',
+    right: 10,
+    top: 'center',
+    textStyle: { fontSize: 12, color: '#4b5563' },
+    formatter: (name) => {
+      const h = holdings.value.find(x => x.name === name)
+      return h ? `${h.code} ${name}` : name
+    },
+  },
+  series: [{
+    type: 'pie',
+    radius: ['40%', '70%'],
+    center: ['38%', '50%'],
+    avoidLabelOverlap: true,
+    label: { show: false },
+    emphasis: {
+      label: { show: true, fontSize: 14, fontWeight: 'bold' },
+      itemStyle: { shadowBlur: 10, shadowOffsetX: 0, shadowColor: 'rgba(0,0,0,0.2)' },
+    },
+    data: holdings.value
+      .filter(h => h.current_value)
+      .map(h => ({ name: h.name, value: Math.round(h.current_value) })),
+  }],
+}))
+
+// 長條圖：各股損益
+const barOption = computed(() => {
+  const sorted = [...holdings.value]
+    .filter(h => h.pnl !== null)
+    .sort((a, b) => b.pnl - a.pnl)
+
+  return {
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'axis',
+      formatter: (params) => {
+        const p = params[0]
+        return `${p.name}<br/>損益：${p.value >= 0 ? '+' : ''}${p.value.toLocaleString()} 元`
+      },
+    },
+    grid: { left: 16, right: 24, top: 16, bottom: 40, containLabel: true },
+    xAxis: {
+      type: 'category',
+      data: sorted.map(h => h.code),
+      axisLabel: { fontSize: 11, color: '#6b7280' },
+      axisLine: { lineStyle: { color: '#e5e7eb' } },
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: {
+        fontSize: 11,
+        color: '#6b7280',
+        formatter: (v) => v >= 0 ? `+${(v/1000).toFixed(0)}K` : `${(v/1000).toFixed(0)}K`,
+      },
+      splitLine: { lineStyle: { color: '#f3f4f6' } },
+    },
+    series: [{
+      type: 'bar',
+      barMaxWidth: 48,
+      data: sorted.map(h => ({
+        value: Math.round(h.pnl),
+        itemStyle: { color: h.pnl >= 0 ? '#ef4444' : '#22c55e', borderRadius: [4, 4, 0, 0] },
+      })),
+    }],
+  }
+})
 </script>
 
 <template>
   <div>
     <h1 class="text-xl md:text-2xl font-bold text-gray-800 mb-4 md:mb-6">持股明細</h1>
 
+    <!-- 圖表區 -->
+    <div v-if="holdings.length" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 md:mb-6">
+
+      <!-- 圓餅圖 -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+        <h2 class="text-sm font-semibold text-gray-600 mb-3">市值佔比</h2>
+        <VChart :option="pieOption" style="height: 260px" autoresize />
+      </div>
+
+      <!-- 長條圖 -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+        <h2 class="text-sm font-semibold text-gray-600 mb-3">各股損益（元）</h2>
+        <VChart :option="barOption" style="height: 260px" autoresize />
+      </div>
+
+    </div>
+
+    <!-- 持股列表 -->
     <div class="bg-white rounded-xl shadow-sm border border-gray-100">
 
       <!-- 桌機 Table -->
@@ -53,11 +156,7 @@ onMounted(() => store.fetchHoldings())
 
       <!-- 手機卡片列表 -->
       <div class="md:hidden divide-y divide-gray-100" v-loading="loading">
-        <div
-          v-for="row in holdings"
-          :key="row.code"
-          class="px-4 py-3"
-        >
+        <div v-for="row in holdings" :key="row.code" class="px-4 py-3">
           <div class="flex items-center justify-between mb-1.5">
             <div class="flex items-center gap-2">
               <span class="font-bold text-gray-800">{{ row.code }}</span>
