@@ -3,6 +3,9 @@ import { ref, onMounted } from 'vue'
 import { usePortfolioStore } from '../stores/portfolio'
 import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
+import axios from 'axios'
+
+const API = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 const store = usePortfolioStore()
 const { transactions, loading } = storeToRefs(store)
@@ -28,8 +31,23 @@ const rules = {
 }
 
 const formRef = ref()
+const lookingUpName = ref(false)
 
 onMounted(() => store.fetchTransactions())
+
+async function onCodeBlur() {
+  const code = form.value.code.trim()
+  if (!code || form.value.name) return
+  lookingUpName.value = true
+  try {
+    const { data } = await axios.get(`${API}/api/stock/${code}`)
+    if (data.name) form.value.name = data.name
+  } catch {
+    // 查不到就讓使用者自己填
+  } finally {
+    lookingUpName.value = false
+  }
+}
 
 async function handleSubmit() {
   await formRef.value.validate(async (valid) => {
@@ -140,10 +158,10 @@ function totalAmount(row) {
           <el-date-picker v-model="form.date" type="date" value-format="YYYY-MM-DD" class="w-full" />
         </el-form-item>
         <el-form-item label="股票代號" prop="code">
-          <el-input v-model="form.code" placeholder="如：0050" />
+          <el-input v-model="form.code" placeholder="如：0050" @blur="onCodeBlur" />
         </el-form-item>
         <el-form-item label="股票名稱">
-          <el-input v-model="form.name" placeholder="如：元大台灣50" />
+          <el-input v-model="form.name" placeholder="輸入代號後自動帶入" :loading="lookingUpName" />
         </el-form-item>
         <el-form-item label="類型" prop="type">
           <el-radio-group v-model="form.type">

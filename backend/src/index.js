@@ -16,6 +16,13 @@ app.use(express.json())
 
 app.get('/api/health', (_, res) => res.json({ status: 'ok', name: '股小秘 Stock Genie' }))
 
+app.get('/api/stock/:code', async (req, res) => {
+  const { getStockInfo } = await import('./services/stockPrice.js')
+  const info = await getStockInfo(req.params.code)
+  if (!info.name) return res.status(404).json({ error: '找不到此股票代號' })
+  res.json(info)
+})
+
 app.use('/api/transactions', transactionsRouter)
 app.use('/api/holdings', holdingsRouter)
 app.use('/api/dividends', dividendsRouter)

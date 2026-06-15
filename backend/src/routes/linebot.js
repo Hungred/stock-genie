@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { messagingApi, middleware } from '@line/bot-sdk'
 import db from '../db/index.js'
-import { getStockPrice } from '../services/stockPrice.js'
+import { getStockPrice, getStockInfo } from '../services/stockPrice.js'
 
 const router = Router()
 
@@ -72,13 +72,14 @@ const HELP_MSG =
   '持股 → 持股清單\n' +
   '0050 → 單支股票狀況\n\n' +
   '【新增交易】\n' +
-  '買 0050 元大台灣50 100 145.2\n' +
-  '買 0050 元大台灣50 100 145.2 20\n' +
-  '賣 0050 元大台灣50 50 160\n' +
-  '（格式：買/賣 代號 名稱 股數 單價 手續費）\n\n' +
+  '買 0050 100 145.2\n' +
+  '買 0050 100 145.2 20  ← 含手續費\n' +
+  '賣 0050 50 160\n' +
+  '（格式：買/賣 代號 股數 單價 [手續費]）\n' +
+  '名稱會自動帶入，不用手打\n\n' +
   '【新增配息】\n' +
-  '配息 0050 元大台灣50 1.5 255\n' +
-  '（格式：配息 代號 名稱 每股金額 股數）'
+  '配息 0050 1.5 255\n' +
+  '（格式：配息 代號 每股金額 股數）'
 
 async function handleMessage(event) {
   const client = getClient()
@@ -132,10 +133,22 @@ async function handleMessage(event) {
     return reply(client, event.replyToken, HELP_MSG)
   }
 
-  // 新增買賣交易：買/賣 代號 名稱 股數 單價 [手續費]
-  const tradeMatch = text.match(/^(買|賣)\s+(\S+)\s+(\S+)\s+(\d+)\s+([\d.]+)(?:\s+([\d.]+))?$/)
-  if (tradeMatch) {
-    const [, action, code, name, shares, price, fee] = tradeMatch
+  // 新增買賣交易
+  // 格式 A（含名稱）：買 0050 元大台灣50 100 145.2 [20]
+  // 格式 B（免名稱）：買 0050 100 145.2 [20]
+  const tradeA = text.match(/^(買|賣)\s+(\S+)\s+([^\d]\S*)\s+(\d+)\s+([\d.]+)(?:\s+([\d.]+))?$/)
+  const tradeB = text.match(/^(買|賣)\s+(\S+)\s+(\d+)\s+([\d.]+)(?:\s+([\d.]+))?$/)
+
+  if (tradeA || tradeB) {
+    let action, code, name, shares, price, fee
+    if (tradeA) {
+      [, action, code, name, shares, price, fee] = tradeA
+    } else {
+      [, action, code, shares, price, fee] = tradeB
+      // 自動查詢名稱
+      const info = await getStockInfo(code)
+      name = info.name ?? code
+    }
     const type = action === '買' ? 'buy' : 'sell'
     try {
       db.prepare(`
@@ -152,10 +165,21 @@ async function handleMessage(event) {
     }
   }
 
-  // 新增配息：配息 代號 名稱 每股金額 股數
-  const divMatch = text.match(/^配息\s+(\S+)\s+(\S+)\s+([\d.]+)\s+(\d+)$/)
-  if (divMatch) {
-    const [, code, name, dividendPerShare, shares] = divMatch
+  // 新增配息
+  // 格式 A（含名稱）：配息 0050 元大台灣50 1.5 255
+  // 格式 B（免名稱）：配息 0050 1.5 255
+  const divA = text.match(/^配息\s+(\S+)\s+([^\d]\S*)\s+([\d.]+)\s+(\d+)$/)
+  const divB = text.match(/^配息\s+(\S+)\s+([\d.]+)\s+(\d+)$/)
+
+  if (divA || divB) {
+    let code, name, dividendPerShare, shares
+    if (divA) {
+      [, code, name, dividendPerShare, shares] = divA
+    } else {
+      [, code, dividendPerShare, shares] = divB
+      const info = await getStockInfo(code)
+      name = info.name ?? code
+    }
     const amount = parseFloat(dividendPerShare) * parseInt(shares)
     try {
       db.prepare(`

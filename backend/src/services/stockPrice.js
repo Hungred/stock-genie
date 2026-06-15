@@ -2,18 +2,45 @@ import axios from 'axios'
 
 const FUGLE_API_KEY = process.env.FUGLE_API_KEY
 
-// 台股即時/收盤行情
+async function fetchQuote(code) {
+  const symbol = code.toUpperCase()
+  const url = `https://api.fugle.tw/marketdata/v1.0/stock/intraday/quote/${symbol}`
+  const { data } = await axios.get(url, {
+    headers: { 'X-API-KEY': FUGLE_API_KEY },
+  })
+  return data
+}
+
+// 取得股票現價
 export async function getStockPrice(code) {
   try {
-    // 判斷是 ETF 或個股，Fugle 代號格式
-    const symbol = code.toUpperCase()
-    const url = `https://api.fugle.tw/marketdata/v1.0/stock/intraday/quote/${symbol}`
-    const { data } = await axios.get(url, {
-      headers: { 'X-API-KEY': FUGLE_API_KEY },
-    })
+    const data = await fetchQuote(code)
     return data.closePrice ?? data.lastPrice ?? null
   } catch {
     return null
+  }
+}
+
+// 取得股票名稱
+export async function getStockName(code) {
+  try {
+    const data = await fetchQuote(code)
+    return data.name ?? null
+  } catch {
+    return null
+  }
+}
+
+// 取得股票名稱 + 現價
+export async function getStockInfo(code) {
+  try {
+    const data = await fetchQuote(code)
+    return {
+      name: data.name ?? null,
+      price: data.closePrice ?? data.lastPrice ?? null,
+    }
+  } catch {
+    return { name: null, price: null }
   }
 }
 
