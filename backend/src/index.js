@@ -5,6 +5,7 @@ import transactionsRouter from './routes/transactions.js'
 import holdingsRouter from './routes/holdings.js'
 import dividendsRouter from './routes/dividends.js'
 import linebotRouter from './routes/linebot.js'
+import chartsRouter from './routes/charts.js'
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -19,6 +20,7 @@ app.use('/api/transactions', transactionsRouter)
 app.use('/api/holdings', holdingsRouter)
 app.use('/api/dividends', dividendsRouter)
 app.use('/api/linebot', linebotRouter)
+app.use('/api/charts', chartsRouter)
 
 app.listen(PORT, () => {
   console.log(`🚀 股小秘後端啟動 port ${PORT}`)

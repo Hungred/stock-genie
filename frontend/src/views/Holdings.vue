@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, computed } from 'vue'
+import { onMounted, computed, ref } from 'vue'
 import { usePortfolioStore } from '../stores/portfolio'
 import { storeToRefs } from 'pinia'
 import VChart from 'vue-echarts'
@@ -16,9 +16,10 @@ use([CanvasRenderer, PieChart, BarChart, TitleComponent, TooltipComponent, Legen
 const store = usePortfolioStore()
 const { holdings, loading } = storeToRefs(store)
 
+const activeChart = ref('pie')
+
 onMounted(() => store.fetchHoldings())
 
-// 圓餅圖：持股市值佔比
 const pieOption = computed(() => ({
   backgroundColor: 'transparent',
   tooltip: {
@@ -51,7 +52,6 @@ const pieOption = computed(() => ({
   }],
 }))
 
-// 長條圖：各股損益
 const barOption = computed(() => {
   const sorted = [...holdings.value]
     .filter(h => h.pnl !== null)
@@ -78,7 +78,7 @@ const barOption = computed(() => {
       axisLabel: {
         fontSize: 11,
         color: '#6b7280',
-        formatter: (v) => v >= 0 ? `+${(v/1000).toFixed(0)}K` : `${(v/1000).toFixed(0)}K`,
+        formatter: (v) => v >= 0 ? `+${(v / 1000).toFixed(0)}K` : `${(v / 1000).toFixed(0)}K`,
       },
       splitLine: { lineStyle: { color: '#f3f4f6' } },
     },
@@ -99,18 +99,44 @@ const barOption = computed(() => {
     <h1 class="text-xl md:text-2xl font-bold text-gray-800 mb-4 md:mb-6">持股明細</h1>
 
     <!-- 圖表區 -->
-    <div v-if="holdings.length" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 md:mb-6">
+    <div v-if="holdings.length" class="mb-4 md:mb-6">
 
-      <!-- 圓餅圖 -->
-      <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-        <h2 class="text-sm font-semibold text-gray-600 mb-3">市值佔比</h2>
-        <VChart :option="pieOption" style="height: 260px" autoresize />
+      <!-- 桌機：左右並列 -->
+      <div class="hidden md:grid grid-cols-2 gap-4">
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+          <h2 class="text-sm font-semibold text-gray-600 mb-2">市值佔比</h2>
+          <VChart :option="pieOption" style="height: 260px" autoresize />
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+          <h2 class="text-sm font-semibold text-gray-600 mb-2">各股損益（元）</h2>
+          <VChart :option="barOption" style="height: 260px" autoresize />
+        </div>
       </div>
 
-      <!-- 長條圖 -->
-      <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-        <h2 class="text-sm font-semibold text-gray-600 mb-3">各股損益（元）</h2>
-        <VChart :option="barOption" style="height: 260px" autoresize />
+      <!-- 手機：tab 切換 -->
+      <div class="md:hidden bg-white rounded-xl shadow-sm border border-gray-100">
+        <div class="flex items-center justify-between px-4 pt-4 pb-2">
+          <h2 class="text-sm font-semibold text-gray-600">
+            {{ activeChart === 'pie' ? '市值佔比' : '各股損益（元）' }}
+          </h2>
+          <div class="flex gap-1 bg-gray-100 rounded-lg p-1">
+            <button
+              @click="activeChart = 'pie'"
+              class="px-3 py-1 text-xs font-medium rounded-md transition-colors"
+              :class="activeChart === 'pie' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'"
+            >圓餅圖</button>
+            <button
+              @click="activeChart = 'bar'"
+              class="px-3 py-1 text-xs font-medium rounded-md transition-colors"
+              :class="activeChart === 'bar' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'"
+            >長條圖</button>
+          </div>
+        </div>
+        <VChart
+          :option="activeChart === 'pie' ? pieOption : barOption"
+          style="height: 260px; padding: 0 8px 8px"
+          autoresize
+        />
       </div>
 
     </div>

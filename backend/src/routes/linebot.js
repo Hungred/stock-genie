@@ -11,6 +11,7 @@ const lineConfig = {
 }
 
 const WEB_URL = process.env.WEB_URL || 'https://stock-genie-web.onrender.com'
+const API_URL = process.env.API_URL || 'https://stock-genie-api.onrender.com'
 
 function getClient() {
   return new messagingApi.MessagingApiClient({ channelAccessToken: lineConfig.channelAccessToken })
@@ -30,6 +31,20 @@ function reply(client, replyToken, text) {
   return client.replyMessage({
     replyToken,
     messages: [{ type: 'text', text, quickReply: QUICK_REPLY }],
+  })
+}
+
+function replyWithImage(client, replyToken, text, imageUrl) {
+  return client.replyMessage({
+    replyToken,
+    messages: [
+      {
+        type: 'image',
+        originalContentUrl: imageUrl,
+        previewImageUrl: imageUrl,
+      },
+      { type: 'text', text, quickReply: QUICK_REPLY },
+    ],
   })
 }
 
@@ -97,7 +112,7 @@ async function handleMessage(event) {
     msg += `───────────\n`
     msg += `總損益：${totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(0)} 元\n`
     msg += `報酬率：${totalPct}%`
-    return reply(client, event.replyToken, msg)
+    return replyWithImage(client, event.replyToken, msg, `${API_URL}/api/charts/bar`)
   }
 
   // 查詢持股
@@ -109,7 +124,7 @@ async function handleMessage(event) {
       const avg = (h.total_cost / h.shares).toFixed(2)
       msg += `${h.code} ${h.name}  ${h.shares}股\n均成本：${avg}\n\n`
     }
-    return reply(client, event.replyToken, msg.trim())
+    return replyWithImage(client, event.replyToken, msg.trim(), `${API_URL}/api/charts/pie`)
   }
 
   // 指令說明
