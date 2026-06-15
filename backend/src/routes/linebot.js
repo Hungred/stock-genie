@@ -76,10 +76,17 @@ const HELP_MSG =
   '買 0050 100 145.2 20  ← 含手續費\n' +
   '賣 0050 50 160\n' +
   '（格式：買/賣 代號 股數 單價 [手續費]）\n' +
-  '名稱會自動帶入，不用手打\n\n' +
+  '名稱自動帶入，不用手打\n\n' +
+  '多筆請換行，一次送出：\n' +
+  '買 0050 100 145.2\n' +
+  '買 00878 200 19.5\n' +
+  '賣 2330 1 850\n\n' +
   '【新增配息】\n' +
   '配息 0050 1.5 255\n' +
-  '（格式：配息 代號 每股金額 股數）'
+  '（格式：配息 代號 每股金額 股數）\n\n' +
+  '多筆配息也支援換行：\n' +
+  '配息 0050 1.5 255\n' +
+  '配息 00878 0.48 350'
 
 async function handleMessage(event) {
   const client = getClient()
@@ -133,66 +140,68 @@ async function handleMessage(event) {
     return reply(client, event.replyToken, HELP_MSG)
   }
 
-  // 新增買賣交易
+  // 新增買賣交易（單筆或多筆，每行一筆）
   // 格式 A（含名稱）：買 0050 元大台灣50 100 145.2 [20]
   // 格式 B（免名稱）：買 0050 100 145.2 [20]
-  const tradeA = text.match(/^(買|賣)\s+(\S+)\s+([^\d]\S*)\s+(\d+)\s+([\d.]+)(?:\s+([\d.]+))?$/)
-  const tradeB = text.match(/^(買|賣)\s+(\S+)\s+(\d+)\s+([\d.]+)(?:\s+([\d.]+))?$/)
+  const TRADE_A = /^(買|賣)\s+(\S+)\s+([^\d]\S*)\s+(\d+)\s+([\d.]+)(?:\s+([\d.]+))?$/
+  const TRADE_B = /^(買|賣)\s+(\S+)\s+(\d+)\s+([\d.]+)(?:\s+([\d.]+))?$/
 
-  if (tradeA || tradeB) {
-    let action, code, name, shares, price, fee
-    if (tradeA) {
-      [, action, code, name, shares, price, fee] = tradeA
-    } else {
-      [, action, code, shares, price, fee] = tradeB
-      // 自動查詢名稱
-      const info = await getStockInfo(code)
-      name = info.name ?? code
+  const tradeLines = text.split('\n').map(l => l.trim()).filter(l => TRADE_A.test(l) || TRADE_B.test(l))
+  if (tradeLines.length > 0) {
+    const results = []
+    for (const line of tradeLines) {
+      const mA = line.match(TRADE_A)
+      const mB = line.match(TRADE_B)
+      let action, code, name, shares, price, fee
+      if (mA) {
+        [, action, code, name, shares, price, fee] = mA
+      } else {
+        [, action, code, shares, price, fee] = mB
+        const info = await getStockInfo(code)
+        name = info.name ?? code
+      }
+      try {
+        db.prepare(`INSERT INTO transactions (date, code, name, type, shares, price, fee) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+          .run(today, code.toUpperCase(), name, action === '買' ? 'buy' : 'sell', parseInt(shares), parseFloat(price), fee ? parseFloat(fee) : 0)
+        const total = (parseInt(shares) * parseFloat(price) + (fee ? parseFloat(fee) : 0)).toLocaleString()
+        results.push(`✅ ${action} ${code} ${name}  ${shares}股 × ${price} = ${total}`)
+      } catch (e) {
+        results.push(`❌ ${action} ${code} 失敗：${e.message}`)
+      }
     }
-    const type = action === '買' ? 'buy' : 'sell'
-    try {
-      db.prepare(`
-        INSERT INTO transactions (date, code, name, type, shares, price, fee)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(today, code.toUpperCase(), name, type, parseInt(shares), parseFloat(price), fee ? parseFloat(fee) : 0)
-
-      const total = (parseInt(shares) * parseFloat(price) + (fee ? parseFloat(fee) : 0)).toLocaleString()
-      return reply(client, event.replyToken,
-        `✅ 交易記錄新增成功\n\n${action}入 ${code} ${name}\n股數：${shares} 股\n單價：${price}\n手續費：${fee || 0}\n總金額：${total} 元`
-      )
-    } catch (e) {
-      return reply(client, event.replyToken, `❌ 新增失敗：${e.message}`)
-    }
+    return reply(client, event.replyToken, `新增 ${tradeLines.length} 筆交易記錄\n\n${results.join('\n')}`)
   }
 
-  // 新增配息
+  // 新增配息（單筆或多筆）
   // 格式 A（含名稱）：配息 0050 元大台灣50 1.5 255
   // 格式 B（免名稱）：配息 0050 1.5 255
-  const divA = text.match(/^配息\s+(\S+)\s+([^\d]\S*)\s+([\d.]+)\s+(\d+)$/)
-  const divB = text.match(/^配息\s+(\S+)\s+([\d.]+)\s+(\d+)$/)
+  const DIV_A = /^配息\s+(\S+)\s+([^\d]\S*)\s+([\d.]+)\s+(\d+)$/
+  const DIV_B = /^配息\s+(\S+)\s+([\d.]+)\s+(\d+)$/
 
-  if (divA || divB) {
-    let code, name, dividendPerShare, shares
-    if (divA) {
-      [, code, name, dividendPerShare, shares] = divA
-    } else {
-      [, code, dividendPerShare, shares] = divB
-      const info = await getStockInfo(code)
-      name = info.name ?? code
+  const divLines = text.split('\n').map(l => l.trim()).filter(l => DIV_A.test(l) || DIV_B.test(l))
+  if (divLines.length > 0) {
+    const results = []
+    for (const line of divLines) {
+      const mA = line.match(DIV_A)
+      const mB = line.match(DIV_B)
+      let code, name, dividendPerShare, shares
+      if (mA) {
+        [, code, name, dividendPerShare, shares] = mA
+      } else {
+        [, code, dividendPerShare, shares] = mB
+        const info = await getStockInfo(code)
+        name = info.name ?? code
+      }
+      const amount = parseFloat(dividendPerShare) * parseInt(shares)
+      try {
+        db.prepare(`INSERT INTO dividends (date, code, name, dividend_per_share, shares, amount) VALUES (?, ?, ?, ?, ?, ?)`)
+          .run(today, code.toUpperCase(), name, parseFloat(dividendPerShare), parseInt(shares), amount)
+        results.push(`✅ ${code} ${name}  每股${dividendPerShare} × ${shares}股 = ${amount.toLocaleString()}`)
+      } catch (e) {
+        results.push(`❌ ${code} 失敗：${e.message}`)
+      }
     }
-    const amount = parseFloat(dividendPerShare) * parseInt(shares)
-    try {
-      db.prepare(`
-        INSERT INTO dividends (date, code, name, dividend_per_share, shares, amount)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(today, code.toUpperCase(), name, parseFloat(dividendPerShare), parseInt(shares), amount)
-
-      return reply(client, event.replyToken,
-        `✅ 配息記錄新增成功\n\n${code} ${name}\n每股配息：${dividendPerShare}\n股數：${shares} 股\n實領金額：${amount.toLocaleString()} 元`
-      )
-    } catch (e) {
-      return reply(client, event.replyToken, `❌ 新增失敗：${e.message}`)
-    }
+    return reply(client, event.replyToken, `新增 ${divLines.length} 筆配息記錄\n\n${results.join('\n')}`)
   }
 
   // 查詢單支股票
