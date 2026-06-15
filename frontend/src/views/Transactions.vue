@@ -64,38 +64,77 @@ function totalAmount(row) {
 
 <template>
   <div>
-    <div class="flex items-center justify-between mb-6">
-      <h1 class="text-2xl font-bold text-gray-800">交易記錄</h1>
+    <div class="flex items-center justify-between mb-4 md:mb-6">
+      <h1 class="text-xl md:text-2xl font-bold text-gray-800">交易記錄</h1>
       <el-button type="primary" @click="showDialog = true">
         <el-icon class="mr-1"><Plus /></el-icon>新增交易
       </el-button>
     </div>
 
     <div class="bg-white rounded-xl shadow-sm border border-gray-100">
-      <el-table :data="transactions" v-loading="loading" stripe>
-        <el-table-column prop="date" label="日期" width="110" />
-        <el-table-column prop="code" label="代號" width="90" />
-        <el-table-column prop="name" label="名稱" min-width="120" />
-        <el-table-column prop="type" label="類型" width="70">
-          <template #default="{ row }">
-            <el-tag :type="row.type === 'buy' ? 'danger' : 'success'" size="small">
-              {{ row.type === 'buy' ? '買入' : '賣出' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="shares" label="股數" width="80" align="right" />
-        <el-table-column prop="price" label="單價" width="90" align="right" />
-        <el-table-column label="手續費" width="80" align="right">
-          <template #default="{ row }">{{ row.fee || 0 }}</template>
-        </el-table-column>
-        <el-table-column label="總金額" width="110" align="right">
-          <template #default="{ row }">{{ totalAmount(row) }}</template>
-        </el-table-column>
-      </el-table>
+
+      <!-- 桌機 Table -->
+      <div class="hidden md:block overflow-x-auto">
+        <el-table :data="transactions" v-loading="loading" stripe>
+          <el-table-column prop="date" label="日期" width="110" />
+          <el-table-column prop="code" label="代號" width="90" />
+          <el-table-column prop="name" label="名稱" min-width="120" />
+          <el-table-column prop="type" label="類型" width="70">
+            <template #default="{ row }">
+              <el-tag :type="row.type === 'buy' ? 'danger' : 'success'" size="small">
+                {{ row.type === 'buy' ? '買入' : '賣出' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="shares" label="股數" width="80" align="right" />
+          <el-table-column prop="price" label="單價" width="90" align="right" />
+          <el-table-column label="手續費" width="80" align="right">
+            <template #default="{ row }">{{ row.fee || 0 }}</template>
+          </el-table-column>
+          <el-table-column label="總金額" width="110" align="right">
+            <template #default="{ row }">{{ totalAmount(row) }}</template>
+          </el-table-column>
+        </el-table>
+      </div>
+
+      <!-- 手機卡片列表 -->
+      <div class="md:hidden divide-y divide-gray-100" v-loading="loading">
+        <div
+          v-for="row in transactions"
+          :key="row.id"
+          class="flex items-center justify-between px-4 py-3"
+        >
+          <div>
+            <div class="flex items-center gap-2 mb-1">
+              <el-tag :type="row.type === 'buy' ? 'danger' : 'success'" size="small">
+                {{ row.type === 'buy' ? '買入' : '賣出' }}
+              </el-tag>
+              <span class="font-semibold text-gray-800 text-sm">{{ row.code }}</span>
+              <span class="text-gray-500 text-xs">{{ row.name }}</span>
+            </div>
+            <div class="text-xs text-gray-400">
+              {{ row.date }} · {{ row.shares }}股 × {{ row.price }}
+              <span v-if="row.fee"> · 手續費 {{ row.fee }}</span>
+            </div>
+          </div>
+          <div class="text-right font-medium text-gray-700 text-sm">
+            {{ totalAmount(row) }}
+          </div>
+        </div>
+        <div v-if="!transactions.length && !loading" class="py-8 text-center text-gray-400 text-sm">
+          尚無交易記錄
+        </div>
+      </div>
+
     </div>
 
     <!-- 新增交易 Dialog -->
-    <el-dialog v-model="showDialog" title="新增交易記錄" width="480px">
+    <el-dialog
+      v-model="showDialog"
+      title="新增交易記錄"
+      :width="'92vw'"
+      style="max-width: 480px"
+    >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="80px">
         <el-form-item label="日期" prop="date">
           <el-date-picker v-model="form.date" type="date" value-format="YYYY-MM-DD" class="w-full" />
