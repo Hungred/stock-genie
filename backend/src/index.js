@@ -1,12 +1,15 @@
 import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
+import { initDb } from './db/index.js'
 import transactionsRouter from './routes/transactions.js'
 import holdingsRouter from './routes/holdings.js'
 import dividendsRouter from './routes/dividends.js'
 import linebotRouter from './routes/linebot.js'
 import chartsRouter from './routes/charts.js'
 import authRouter from './routes/auth.js'
+
+await initDb()
 
 const app = express()
 const PORT = process.env.PORT || 3000

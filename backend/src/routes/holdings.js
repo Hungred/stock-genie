@@ -7,7 +7,7 @@ const router = Router()
 
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    const holdings = calcHoldings(req.user.userId)
+    const holdings = await calcHoldings(req.user.userId)
     const prices = await getMultiplePrices(holdings.map(h => h.code))
 
     const result = holdings.map(h => {

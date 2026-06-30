@@ -7,7 +7,7 @@ import { authMiddleware } from '../middleware/auth.js'
 const router = Router()
 
 async function getHoldingsWithPrice(userId) {
-  const holdings = calcHoldings(userId)
+  const holdings = await calcHoldings(userId)
   const prices = await getMultiplePrices(holdings.map(h => h.code))
   return holdings.map(h => {
     const current_price = prices[h.code] ?? null

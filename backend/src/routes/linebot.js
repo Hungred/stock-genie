@@ -2,6 +2,8 @@ import { Router } from 'express'
 import { messagingApi, middleware } from '@line/bot-sdk'
 import db from '../db/index.js'
 import { getStockPrice, getStockInfo } from '../services/stockPrice.js'
+import { calcHoldings } from '../services/portfolio.js'
+import { signToken } from '../middleware/auth.js'
 
 const router = Router()
 
@@ -12,12 +14,12 @@ const lineConfig = {
 
 const WEB_URL = process.env.WEB_URL || 'https://stock-genie-web.onrender.com'
 const API_URL = process.env.API_URL || 'https://stock-genie-api.onrender.com'
+const LIFF_ID = process.env.LIFF_ID || ''
 
 function getClient() {
   return new messagingApi.MessagingApiClient({ channelAccessToken: lineConfig.channelAccessToken })
 }
 
-// 固定在每則訊息下方的快捷按鈕
 const QUICK_REPLY = {
   items: [
     { type: 'action', action: { type: 'message', label: '📊 損益', text: '損益' } },
@@ -38,31 +40,26 @@ function replyWithImage(client, replyToken, text, imageUrl) {
   return client.replyMessage({
     replyToken,
     messages: [
-      {
-        type: 'image',
-        originalContentUrl: imageUrl,
-        previewImageUrl: imageUrl,
-      },
+      { type: 'image', originalContentUrl: imageUrl, previewImageUrl: imageUrl },
       { type: 'text', text, quickReply: QUICK_REPLY },
     ],
   })
 }
 
-function calcHoldings() {
-  const rows = db.prepare(`SELECT * FROM transactions ORDER BY date ASC`).all()
-  const map = {}
-  for (const t of rows) {
-    if (!map[t.code]) map[t.code] = { code: t.code, name: t.name, shares: 0, total_cost: 0 }
-    if (t.type === 'buy') {
-      map[t.code].total_cost += t.shares * t.price + (t.fee || 0)
-      map[t.code].shares += t.shares
-    } else {
-      const ratio = t.shares / map[t.code].shares
-      map[t.code].total_cost -= map[t.code].total_cost * ratio
-      map[t.code].shares -= t.shares
-    }
-  }
-  return Object.values(map).filter(h => h.shares > 0)
+// 找或建立 LINE 使用者
+async function findOrCreateUser(client, lineUserId) {
+  const { rows } = await db.query('SELECT * FROM users WHERE line_user_id = $1', [lineUserId])
+  if (rows.length) return rows[0]
+  let displayName = ''
+  try {
+    const profile = await client.getProfile(lineUserId)
+    displayName = profile.displayName || ''
+  } catch {}
+  const result = await db.query(
+    'INSERT INTO users (line_user_id, display_name) VALUES ($1, $2) ON CONFLICT (line_user_id) DO UPDATE SET display_name = EXCLUDED.display_name RETURNING *',
+    [lineUserId, displayName]
+  )
+  return result.rows[0]
 }
 
 const HELP_MSG =
@@ -96,22 +93,26 @@ const HELP_MSG =
 function resolveDate(raw) {
   const d = new Date()
   const map = { '今天': 0, '昨天': -1, '前天': -2, '大前天': -3 }
-  if (raw === undefined || raw === null) return d.toISOString().slice(0, 10)
+  if (raw === undefined || raw === null) return d.toLocaleDateString('sv-SE')
   if (map[raw] !== undefined) {
     d.setDate(d.getDate() + map[raw])
-    return d.toISOString().slice(0, 10)
+    return d.toLocaleDateString('sv-SE')
   }
-  return raw // YYYY-MM-DD
+  return raw
 }
 
 async function handleMessage(event) {
   const client = getClient()
+  const lineUserId = event.source.userId
   const text = event.message.text.trim()
-  const today = new Date().toISOString().slice(0, 10)
+  const today = new Date().toLocaleDateString('sv-SE')
+
+  // 未註冊者自動建帳號
+  const user = await findOrCreateUser(client, lineUserId)
 
   // 查詢損益
   if (text === '損益' || text === '今日損益') {
-    const holdings = calcHoldings()
+    const holdings = await calcHoldings(user.id)
     if (!holdings.length) return reply(client, event.replyToken, '目前沒有持股資料，請先新增交易記錄。')
 
     let msg = '📊 目前持股損益\n\n'
@@ -136,19 +137,22 @@ async function handleMessage(event) {
     msg += `───────────\n`
     msg += `總損益：${totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(0)} 元\n`
     msg += `報酬率：${totalPct}%`
-    return replyWithImage(client, event.replyToken, msg, `${API_URL}/api/charts/bar`)
+
+    const chartToken = signToken({ userId: user.id }, '10m')
+    return replyWithImage(client, event.replyToken, msg, `${API_URL}/api/charts/bar?token=${chartToken}`)
   }
 
   // 查詢持股
   if (text === '持股') {
-    const holdings = calcHoldings()
+    const holdings = await calcHoldings(user.id)
     if (!holdings.length) return reply(client, event.replyToken, '目前沒有持股資料，請先新增交易記錄。')
     let msg = '📋 目前持股\n\n'
     for (const h of holdings) {
       const avg = (h.total_cost / h.shares).toFixed(2)
       msg += `${h.code} ${h.name}  ${h.shares}股\n均成本：${avg}\n\n`
     }
-    return replyWithImage(client, event.replyToken, msg.trim(), `${API_URL}/api/charts/pie`)
+    const chartToken = signToken({ userId: user.id }, '10m')
+    return replyWithImage(client, event.replyToken, msg.trim(), `${API_URL}/api/charts/pie?token=${chartToken}`)
   }
 
   // 指令說明
@@ -156,9 +160,7 @@ async function handleMessage(event) {
     return reply(client, event.replyToken, HELP_MSG)
   }
 
-  // 新增買賣交易（單筆或多筆，每行一筆）
-  // 格式 A（含名稱）：買 [YYYY-MM-DD] 0050 元大台灣50 100 145.2 [手續費]
-  // 格式 B（免名稱）：買 [YYYY-MM-DD] 0050 100 145.2 [手續費]
+  // 新增買賣交易
   const DATE_TOKEN = /\d{4}-\d{2}-\d{2}|今天|昨天|前天|大前天/
   const TRADE_A = new RegExp(`^(買|賣)\\s+(?:(${DATE_TOKEN.source})\\s+)?(\\S+)\\s+([^\\d]\\S*)\\s+(\\d+)\\s+([\\d.]+)(?:\\s+([\\d.]+))?$`)
   const TRADE_B = new RegExp(`^(買|賣)\\s+(?:(${DATE_TOKEN.source})\\s+)?(\\S+)\\s+(\\d+)\\s+([\\d.]+)(?:\\s+([\\d.]+))?$`)
@@ -179,8 +181,10 @@ async function handleMessage(event) {
       }
       try {
         const txDate = resolveDate(date)
-        db.prepare(`INSERT INTO transactions (date, code, name, type, shares, price, fee) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-          .run(txDate, code.toUpperCase(), name, action === '買' ? 'buy' : 'sell', parseInt(shares), parseFloat(price), fee ? parseFloat(fee) : 0)
+        await db.query(
+          'INSERT INTO transactions (user_id, date, code, name, type, shares, price, fee) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+          [user.id, txDate, code.toUpperCase(), name, action === '買' ? 'buy' : 'sell', parseInt(shares), parseFloat(price), fee ? parseFloat(fee) : 0]
+        )
         const total = (parseInt(shares) * parseFloat(price) + (fee ? parseFloat(fee) : 0)).toLocaleString()
         results.push(`✅ ${action} ${code} ${name}  ${shares}股 × ${price} = ${total} (${txDate})`)
       } catch (e) {
@@ -190,9 +194,7 @@ async function handleMessage(event) {
     return reply(client, event.replyToken, `新增 ${tradeLines.length} 筆交易記錄\n\n${results.join('\n')}`)
   }
 
-  // 新增配息（單筆或多筆）
-  // 格式 A（含名稱）：配息 0050 元大台灣50 1.5 255
-  // 格式 B（免名稱）：配息 0050 1.5 255
+  // 新增配息
   const DIV_A = /^配息\s+(\S+)\s+([^\d]\S*)\s+([\d.]+)\s+(\d+)$/
   const DIV_B = /^配息\s+(\S+)\s+([\d.]+)\s+(\d+)$/
 
@@ -212,8 +214,10 @@ async function handleMessage(event) {
       }
       const amount = parseFloat(dividendPerShare) * parseInt(shares)
       try {
-        db.prepare(`INSERT INTO dividends (date, code, name, dividend_per_share, shares, amount) VALUES (?, ?, ?, ?, ?, ?)`)
-          .run(today, code.toUpperCase(), name, parseFloat(dividendPerShare), parseInt(shares), amount)
+        await db.query(
+          'INSERT INTO dividends (user_id, date, code, name, dividend_per_share, shares, amount) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+          [user.id, today, code.toUpperCase(), name, parseFloat(dividendPerShare), parseInt(shares), amount]
+        )
         results.push(`✅ ${code} ${name}  每股${dividendPerShare} × ${shares}股 = ${amount.toLocaleString()}`)
       } catch (e) {
         results.push(`❌ ${code} 失敗：${e.message}`)
@@ -225,7 +229,7 @@ async function handleMessage(event) {
   // 查詢單支股票
   if (/^\d{4,6}[ab]?$/i.test(text)) {
     const price = await getStockPrice(text)
-    const holdings = calcHoldings()
+    const holdings = await calcHoldings(user.id)
     const h = holdings.find(x => x.code.toUpperCase() === text.toUpperCase())
 
     let msg = `📈 ${text.toUpperCase()}\n現價：${price ?? '無法取得'}\n`
@@ -243,18 +247,26 @@ async function handleMessage(event) {
 
 async function handleFollow(event) {
   const client = getClient()
+  const lineUserId = event.source.userId
+
+  // 自動建立帳號
+  await findOrCreateUser(client, lineUserId)
+
+  const liffUrl = LIFF_ID ? `https://liff.line.me/${LIFF_ID}` : WEB_URL
   const welcomeMsg =
     '👋 歡迎使用股小秘！\n\n' +
     '我可以幫你隨時查看、管理台股投資組合 📊\n\n' +
+    `帳號已自動建立，點下方「我的帳號」可開啟網頁版 🖥️\n\n` +
     '─────────────\n' +
     HELP_MSG
   return reply(client, event.replyToken, welcomeMsg)
 }
 
-// 初始化 Rich Menu（部署後呼叫一次即可）
+// 初始化 Rich Menu（部署後呼叫一次）
 router.post('/setup-richmenu', async (req, res) => {
   try {
     const client = getClient()
+    const liffUrl = LIFF_ID ? `https://liff.line.me/${LIFF_ID}` : WEB_URL
 
     const richMenu = await client.createRichMenu({
       size: { width: 2500, height: 843 },
@@ -262,23 +274,15 @@ router.post('/setup-richmenu', async (req, res) => {
       name: '股小秘選單',
       chatBarText: '股小秘選單',
       areas: [
-        {
-          bounds: { x: 0, y: 0, width: 833, height: 843 },
-          action: { type: 'message', label: '損益', text: '損益' },
-        },
-        {
-          bounds: { x: 833, y: 0, width: 833, height: 843 },
-          action: { type: 'message', label: '持股', text: '持股' },
-        },
-        {
-          bounds: { x: 1666, y: 0, width: 834, height: 843 },
-          action: { type: 'uri', label: '開啟網頁', uri: WEB_URL },
-        },
+        { bounds: { x: 0, y: 0, width: 625, height: 843 }, action: { type: 'message', label: '損益', text: '損益' } },
+        { bounds: { x: 625, y: 0, width: 625, height: 843 }, action: { type: 'message', label: '持股', text: '持股' } },
+        { bounds: { x: 1250, y: 0, width: 625, height: 843 }, action: { type: 'uri', label: '我的帳號', uri: liffUrl } },
+        { bounds: { x: 1875, y: 0, width: 625, height: 843 }, action: { type: 'uri', label: '開啟網頁', uri: WEB_URL } },
       ],
     })
 
     await client.setDefaultRichMenu(richMenu.richMenuId)
-    res.json({ ok: true, richMenuId: richMenu.richMenuId, note: '請至 LINE Developers 上傳 Rich Menu 圖片' })
+    res.json({ ok: true, richMenuId: richMenu.richMenuId, note: '請至 LINE Developers 上傳 Rich Menu 圖片（現已改為 4 格）' })
   } catch (e) {
     res.status(500).json({ error: e.message })
   }
