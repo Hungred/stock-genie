@@ -2,7 +2,7 @@
 
 ## 專案概覽
 
-台股投資組合追蹤系統。Node.js + Express 後端、Vue 3 前端、SQLite 資料庫、LINE Bot 整合。
+台股投資組合追蹤系統。Node.js + Express 後端、Vue 3 前端、PostgreSQL（Supabase）資料庫、LINE Bot 整合。
 
 ## 開發指令
 
@@ -24,7 +24,7 @@ cd frontend && npm run build
 | 路徑 | 說明 |
 |------|------|
 | `index.js` | Express 入口，掛載所有 router |
-| `db/index.js` | SQLite 初始化、schema、migration |
+| `db/index.js` | pg Pool 連線、`initDb()` 建立資料表（啟動時自動執行） |
 | `middleware/auth.js` | JWT 驗證（`authMiddleware`）與簽發（`signToken`） |
 | `routes/auth.js` | LINE Login、LIFF 驗證、`/api/auth/me` |
 | `routes/transactions.js` | 交易 CRUD |
@@ -50,15 +50,17 @@ cd frontend && npm run build
 | `views/Transactions.vue` | 交易記錄，支援多筆新增、刪除（含確認 dialog） |
 | `views/Dividends.vue` | 配息記錄，支援多筆新增（輸入代號自動帶名稱/股數）、刪除 |
 
-## 資料庫 Schema
+## 資料庫 Schema（PostgreSQL / Supabase）
 
 ```sql
-users (id, line_user_id UNIQUE, display_name, created_at)
-transactions (id, user_id, date, code, name, category, type, shares, price, fee, created_at)
-dividends (id, user_id, date, code, name, dividend_per_share, shares, amount, created_at)
+users (id SERIAL, line_user_id TEXT UNIQUE, display_name TEXT, created_at TIMESTAMPTZ)
+transactions (id SERIAL, user_id INTEGER, date TEXT, code TEXT, name TEXT, category TEXT, type TEXT, shares INTEGER, price NUMERIC, fee NUMERIC, created_at TIMESTAMPTZ)
+dividends (id SERIAL, user_id INTEGER, date TEXT, code TEXT, name TEXT, dividend_per_share NUMERIC, shares INTEGER, amount NUMERIC, created_at TIMESTAMPTZ)
 ```
 
-所有資料表以 `user_id` 隔離，LINE Bot 也依 `line_user_id` 對應到同一 user。
+- 所有資料表以 `user_id` 隔離，LINE Bot 依 `line_user_id` 對應同一 user
+- pg 回傳的 NUMERIC 欄位型別為字串，取值時需 `Number(t.price)` 轉換
+- 連線設定：`DATABASE_URL` 環境變數，Supabase 需加 `ssl: { rejectUnauthorized: false }`
 
 ## 身分驗證
 
@@ -78,10 +80,12 @@ dividends (id, user_id, date, code, name, dividend_per_share, shares, amount, cr
 
 ## 注意事項
 
-- `better-sqlite3` 是同步 API，所有 DB 操作不需 `await`
+- `pg` 是非同步 API，所有 DB 操作都需要 `await`，查詢結果從 `{ rows }` 解構
+- SQL 佔位符用 `$1, $2...`（不是 `?`）
 - Fugle API 有速率限制，`stockPrice.js` 有簡單快取
 - `charts.js` 用 `chartjs-node-canvas` 產生圖片，中文字需確認字型
 - 環境變數一定要設 `JWT_SECRET`，否則 default 是 `changeme-set-in-env`
+- `DATABASE_URL` 從 Supabase → Settings → Database → URI 取得
 
 ## Git 慣例
 
