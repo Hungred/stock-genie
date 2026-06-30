@@ -5,7 +5,6 @@ import db from '../db/index.js'
 import { getStockPrice, getStockInfo } from '../services/stockPrice.js'
 import { calcHoldings } from '../services/portfolio.js'
 import { signToken } from '../middleware/auth.js'
-import { generateRichMenuImage } from '../services/richMenuGen.js'
 
 const router = Router()
 
@@ -289,19 +288,6 @@ router.post('/setup-richmenu', async (req, res) => {
         { bounds: { x: 1875, y: 0, width: 625, height: 843 }, action: { type: 'uri', label: '開啟網頁', uri: WEB_URL } },
       ],
     })
-
-    // 自動產生並上傳 Rich Menu 圖片
-    const imageBuffer = await generateRichMenuImage()
-    await axios.post(
-      `https://api-data.line.me/v2/bot/richmenu/${richMenu.richMenuId}/content`,
-      imageBuffer,
-      {
-        headers: {
-          Authorization: `Bearer ${lineConfig.channelAccessToken}`,
-          'Content-Type': 'image/png',
-        },
-      }
-    )
 
     await client.setDefaultRichMenu(richMenu.richMenuId)
     res.json({ ok: true, richMenuId: richMenu.richMenuId })
