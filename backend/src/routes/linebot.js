@@ -1,7 +1,12 @@
 import { Router } from 'express'
 import { messagingApi, middleware } from '@line/bot-sdk'
 import axios from 'axios'
+import { readFileSync } from 'fs'
+import { dirname, join } from 'path'
+import { fileURLToPath } from 'url'
 import db from '../db/index.js'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
 import { getStockPrice, getStockInfo } from '../services/stockPrice.js'
 import { calcHoldings } from '../services/portfolio.js'
 import { signToken } from '../middleware/auth.js'
@@ -288,6 +293,15 @@ router.post('/setup-richmenu', async (req, res) => {
         { bounds: { x: 1875, y: 0, width: 625, height: 843 }, action: { type: 'uri', label: '開啟網頁', uri: WEB_URL } },
       ],
     })
+
+    // 上傳 Rich Menu 圖片
+    const imgPath = join(__dirname, '../../../richmenu.png')
+    const imgBuffer = readFileSync(imgPath)
+    await axios.post(
+      `https://api-data.line.me/v2/bot/richmenu/${richMenu.richMenuId}/content`,
+      imgBuffer,
+      { headers: { Authorization: `Bearer ${lineConfig.channelAccessToken}`, 'Content-Type': 'image/png' } }
+    )
 
     await client.setDefaultRichMenu(richMenu.richMenuId)
     res.json({ ok: true, richMenuId: richMenu.richMenuId })
