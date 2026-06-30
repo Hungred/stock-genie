@@ -296,6 +296,19 @@ router.post('/setup-richmenu', async (req, res) => {
   }
 })
 
+// 設定指定 Rich Menu 為預設（一次性用途）
+router.post('/set-default-richmenu', async (req, res) => {
+  try {
+    const { richMenuId } = req.body
+    if (!richMenuId) return res.status(400).json({ error: 'richMenuId required' })
+    const client = getClient()
+    await client.setDefaultRichMenu(richMenuId)
+    res.json({ ok: true, richMenuId })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
 router.post('/webhook', middleware(lineConfig), (req, res) => {
   const events = req.body.events
   Promise.all(events.map(e => {
