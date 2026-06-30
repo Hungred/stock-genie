@@ -52,15 +52,33 @@ export const usePortfolioStore = defineStore('portfolio', () => {
     return data
   }
 
+  async function deleteTransaction(id) {
+    await axios.delete(`${API}/api/transactions/${id}`)
+    await fetchHoldings()
+    transactions.value = transactions.value.filter(t => t.id !== id)
+  }
+
   async function fetchDividends() {
     const { data } = await axios.get(`${API}/api/dividends`)
     dividends.value = data
+  }
+
+  async function addDividend(payload) {
+    const { data } = await axios.post(`${API}/api/dividends`, payload)
+    await fetchDividends()
+    return data
+  }
+
+  async function deleteDividend(id) {
+    await axios.delete(`${API}/api/dividends/${id}`)
+    dividends.value = dividends.value.filter(d => d.id !== id)
   }
 
   return {
     holdings, transactions, dividends,
     loading, error,
     totalCost, totalValue, totalPnl, totalPnlPercent,
-    fetchHoldings, fetchTransactions, addTransaction, fetchDividends,
+    fetchHoldings, fetchTransactions, addTransaction, deleteTransaction,
+    fetchDividends, addDividend, deleteDividend,
   }
 })

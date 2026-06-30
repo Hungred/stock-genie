@@ -37,6 +37,15 @@ function logout() {
             <span class="text-xl">📈</span>
             <span class="font-bold text-gray-800 text-lg">股小秘</span>
           </div>
+          <!-- 手機登出按鈕 -->
+          <button
+            class="md:hidden text-gray-400 hover:text-red-500 transition-colors p-1"
+            @click="logout"
+            title="登出"
+          >
+            <el-icon class="text-xl"><SwitchButton /></el-icon>
+          </button>
+
           <!-- 桌機選單 -->
           <div class="hidden md:flex items-center gap-1">
             <router-link

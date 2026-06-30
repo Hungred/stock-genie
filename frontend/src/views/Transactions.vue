@@ -2,13 +2,27 @@
 import { ref, onMounted } from 'vue'
 import { usePortfolioStore } from '../stores/portfolio'
 import { storeToRefs } from 'pinia'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import axios from 'axios'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 const store = usePortfolioStore()
 const { transactions, loading } = storeToRefs(store)
+
+async function handleDelete(row) {
+  try {
+    await ElMessageBox.confirm(`確認刪除 ${row.date} ${row.code} ${row.type === 'buy' ? '買入' : '賣出'} ${row.shares} 股？`, '刪除確認', {
+      confirmButtonText: '刪除',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+    await store.deleteTransaction(row.id)
+    ElMessage.success('已刪除')
+  } catch {
+    // 取消
+  }
+}
 
 const showDialog = ref(false)
 const submitting = ref(false)
@@ -107,13 +121,20 @@ onMounted(() => store.fetchTransactions())
           <el-table-column label="總金額" width="110" align="right">
             <template #default="{ row }">{{ totalAmount(row) }}</template>
           </el-table-column>
+          <el-table-column width="60" align="center">
+            <template #default="{ row }">
+              <el-button type="danger" link size="small" @click="handleDelete(row)">
+                <el-icon><Delete /></el-icon>
+              </el-button>
+            </template>
+          </el-table-column>
         </el-table>
       </div>
 
       <!-- 手機卡片列表 -->
       <div class="md:hidden divide-y divide-gray-100" v-loading="loading">
         <div v-for="row in transactions" :key="row.id" class="flex items-center justify-between px-4 py-3">
-          <div>
+          <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 mb-1">
               <el-tag :type="row.type === 'buy' ? 'danger' : 'success'" size="small">
                 {{ row.type === 'buy' ? '買入' : '賣出' }}
@@ -126,7 +147,12 @@ onMounted(() => store.fetchTransactions())
               <span v-if="row.fee"> · 手續費 {{ row.fee }}</span>
             </div>
           </div>
-          <div class="text-right font-medium text-gray-700 text-sm">{{ totalAmount(row) }}</div>
+          <div class="flex items-center gap-2 ml-2">
+            <div class="font-medium text-gray-700 text-sm">{{ totalAmount(row) }}</div>
+            <el-button type="danger" link size="small" @click="handleDelete(row)">
+              <el-icon><Delete /></el-icon>
+            </el-button>
+          </div>
         </div>
         <div v-if="!transactions.length && !loading" class="py-8 text-center text-gray-400 text-sm">
           尚無交易記錄
