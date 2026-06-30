@@ -9,8 +9,16 @@ db.pragma('journal_mode = WAL')
 db.pragma('foreign_keys = ON')
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    line_user_id TEXT UNIQUE NOT NULL,
+    display_name TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now', 'localtime'))
+  );
+
   CREATE TABLE IF NOT EXISTS transactions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER REFERENCES users(id),
     date TEXT NOT NULL,
     code TEXT NOT NULL,
     name TEXT NOT NULL,
@@ -24,6 +32,7 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS dividends (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER REFERENCES users(id),
     date TEXT NOT NULL,
     code TEXT NOT NULL,
     name TEXT NOT NULL,
@@ -33,5 +42,9 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now', 'localtime'))
   );
 `)
+
+// Migration: 為既有資料表補上 user_id 欄位
+try { db.exec(`ALTER TABLE transactions ADD COLUMN user_id INTEGER REFERENCES users(id)`) } catch {}
+try { db.exec(`ALTER TABLE dividends ADD COLUMN user_id INTEGER REFERENCES users(id)`) } catch {}
 
 export default db

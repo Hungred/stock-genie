@@ -6,6 +6,7 @@ import holdingsRouter from './routes/holdings.js'
 import dividendsRouter from './routes/dividends.js'
 import linebotRouter from './routes/linebot.js'
 import chartsRouter from './routes/charts.js'
+import authRouter from './routes/auth.js'
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -23,6 +24,7 @@ app.get('/api/stock/:code', async (req, res) => {
   res.json(info)
 })
 
+app.use('/api/auth', authRouter)
 app.use('/api/transactions', transactionsRouter)
 app.use('/api/holdings', holdingsRouter)
 app.use('/api/dividends', dividendsRouter)

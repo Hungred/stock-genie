@@ -3,15 +3,30 @@ import Dashboard from '../views/Dashboard.vue'
 import Holdings from '../views/Holdings.vue'
 import Transactions from '../views/Transactions.vue'
 import Dividends from '../views/Dividends.vue'
+import Login from '../views/Login.vue'
+import Liff from '../views/Liff.vue'
 
 const routes = [
-  { path: '/', name: 'Dashboard', component: Dashboard },
-  { path: '/holdings', name: 'Holdings', component: Holdings },
-  { path: '/transactions', name: 'Transactions', component: Transactions },
-  { path: '/dividends', name: 'Dividends', component: Dividends },
+  { path: '/', name: 'Dashboard', component: Dashboard, meta: { requiresAuth: true } },
+  { path: '/holdings', name: 'Holdings', component: Holdings, meta: { requiresAuth: true } },
+  { path: '/transactions', name: 'Transactions', component: Transactions, meta: { requiresAuth: true } },
+  { path: '/dividends', name: 'Dividends', component: Dividends, meta: { requiresAuth: true } },
+  { path: '/login', name: 'Login', component: Login },
+  { path: '/liff', name: 'Liff', component: Liff },
 ]
 
-export default createRouter({
+const router = createRouter({
   history: createWebHistory(),
   routes,
 })
+
+router.beforeEach((to, from, next) => {
+  const token = localStorage.getItem('sg_token')
+  if (to.meta.requiresAuth && !token) {
+    next('/login')
+  } else {
+    next()
+  }
+})
+
+export default router
