@@ -295,7 +295,7 @@ router.post('/setup-richmenu', async (req, res) => {
     })
 
     // 上傳 Rich Menu 圖片
-    const imgPath = join(__dirname, '../../../richmenu.png')
+    const imgPath = join(__dirname, '../../richmenu.png')
     const imgBuffer = readFileSync(imgPath)
     await axios.post(
       `https://api-data.line.me/v2/bot/richmenu/${richMenu.richMenuId}/content`,
