@@ -1,9 +1,11 @@
 import { Router } from 'express'
 import { messagingApi, middleware } from '@line/bot-sdk'
+import axios from 'axios'
 import db from '../db/index.js'
 import { getStockPrice, getStockInfo } from '../services/stockPrice.js'
 import { calcHoldings } from '../services/portfolio.js'
 import { signToken } from '../middleware/auth.js'
+import { generateRichMenuImage } from '../services/richMenuGen.js'
 
 const router = Router()
 
@@ -24,7 +26,7 @@ const QUICK_REPLY = {
   items: [
     { type: 'action', action: { type: 'message', label: '📊 損益', text: '損益' } },
     { type: 'action', action: { type: 'message', label: '📋 持股', text: '持股' } },
-    { type: 'action', action: { type: 'message', label: '📖 指令說明', text: '指令說明' } },
+    { type: 'action', action: { type: 'uri', label: '👤 我的帳號', uri: LIFF_ID ? `https://liff.line.me/${LIFF_ID}` : WEB_URL } },
     { type: 'action', action: { type: 'uri', label: '🖥️ 開啟網頁', uri: WEB_URL } },
   ],
 }
@@ -67,7 +69,8 @@ const HELP_MSG =
   '【查詢】\n' +
   '損益 → 全部持股損益\n' +
   '持股 → 持股清單\n' +
-  '0050 → 單支股票狀況\n\n' +
+  '0050 → 單支股票狀況\n' +
+  '綁定 → 綁定網頁帳號\n\n' +
   '【新增交易】\n' +
   '買 0050 100 145.2\n' +
   '買 0050 100 145.2 20  ← 含手續費\n' +
@@ -158,6 +161,12 @@ async function handleMessage(event) {
   // 指令說明
   if (text === '指令說明' || text === '說明' || text === 'help') {
     return reply(client, event.replyToken, HELP_MSG)
+  }
+
+  // 綁定帳號
+  if (text === '綁定' || text === '登入' || text === '我的帳號') {
+    const liffUrl = LIFF_ID ? `https://liff.line.me/${LIFF_ID}` : WEB_URL
+    return reply(client, event.replyToken, `👤 點下方連結完成帳號綁定：\n${liffUrl}\n\n綁定後即可在網頁查看完整投資組合。`)
   }
 
   // 新增買賣交易
@@ -281,8 +290,21 @@ router.post('/setup-richmenu', async (req, res) => {
       ],
     })
 
+    // 自動產生並上傳 Rich Menu 圖片
+    const imageBuffer = await generateRichMenuImage()
+    await axios.post(
+      `https://api-data.line.me/v2/bot/richmenu/${richMenu.richMenuId}/content`,
+      imageBuffer,
+      {
+        headers: {
+          Authorization: `Bearer ${lineConfig.channelAccessToken}`,
+          'Content-Type': 'image/png',
+        },
+      }
+    )
+
     await client.setDefaultRichMenu(richMenu.richMenuId)
-    res.json({ ok: true, richMenuId: richMenu.richMenuId, note: '請至 LINE Developers 上傳 Rich Menu 圖片（現已改為 4 格）' })
+    res.json({ ok: true, richMenuId: richMenu.richMenuId })
   } catch (e) {
     res.status(500).json({ error: e.message })
   }
