@@ -42,13 +42,13 @@ cd frontend && npm run build
 | `main.js` | 應用入口，含 axios interceptor（自動帶 JWT） |
 | `router/index.js` | 路由設定，`meta.requiresAuth` + navigation guard |
 | `stores/auth.js` | Pinia auth store（token、displayName、logout） |
-| `stores/portfolio.js` | Pinia portfolio store（holdings、transactions、dividends） |
+| `stores/portfolio.js` | Pinia portfolio store（holdings、transactions、dividends，含 delete/add 操作） |
 | `views/Login.vue` | LINE OAuth 登入頁（`/login`） |
 | `views/Liff.vue` | LIFF SDK 登入頁（`/liff`） |
 | `views/Dashboard.vue` | 總覽儀表板 |
 | `views/Holdings.vue` | 持股明細與圖表 |
-| `views/Transactions.vue` | 交易記錄 |
-| `views/Dividends.vue` | 配息記錄 |
+| `views/Transactions.vue` | 交易記錄，支援多筆新增、刪除（含確認 dialog） |
+| `views/Dividends.vue` | 配息記錄，支援多筆新增（輸入代號自動帶名稱/股數）、刪除 |
 
 ## 資料庫 Schema
 
@@ -67,6 +67,7 @@ dividends (id, user_id, date, code, name, dividend_per_share, shares, amount, cr
 - JWT 存 `localStorage('sg_token')`，`main.js` 的 axios interceptor 自動帶入
 - 後端所有資料 API 都套用 `authMiddleware`
 - Navigation guard 在 router 中，未登入自動跳轉 `/login`
+- 登出：桌機 navbar 右側文字按鈕；手機 navbar 右側 `SwitchButton` 圖示按鈕
 
 ## LINE Bot 邏輯
 
