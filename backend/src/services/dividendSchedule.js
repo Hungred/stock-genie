@@ -9,6 +9,7 @@ function twseDateStr(date) {
 }
 
 // 抓 TWSE 除權息公告（未來 60 天）
+// TWT49U 欄位：0=資料日期(除息日) 1=股票代號 2=股票名稱 5=權值+息值 6=權/息
 export async function syncDividendSchedules() {
   const today = new Date()
   const future = new Date(today)
@@ -18,39 +19,31 @@ export async function syncDividendSchedules() {
 
   const { data } = await axios.get(url, {
     headers: { 'User-Agent': 'Mozilla/5.0' },
-    timeout: 10000,
+    timeout: 15000,
+    maxRedirects: 5,
   })
 
   if (!data?.data || !Array.isArray(data.data)) {
-    console.log('[dividend-sync] no data returned from TWSE')
+    console.log('[dividend-sync] no data returned from TWSE, stat:', data?.stat)
     return 0
   }
 
-  // TWSE 欄位順序（依 TWT49U API）：
-  // 0:日期 1:代號 2:名稱 3:除息日 4:除權日 5:最後除息買進日 6:最後除權買進日
-  // 7:現金股利 8:股票股利 ...
-  // 使用 fields array 來找欄位
-  const fields = data.fields ?? []
-  const colDate = fields.indexOf('日期') !== -1 ? fields.indexOf('日期') : 0
-  const colCode = fields.findIndex(f => f.includes('代號') || f.includes('股票代號'))
-  const colName = fields.findIndex(f => f.includes('名稱') || f.includes('股票名稱'))
-  const colExDivDate = fields.findIndex(f => f.includes('除息日期') || f === '除息日')
-  const colCash = fields.findIndex(f => f.includes('現金股利') || f.includes('現金'))
-  const colStock = fields.findIndex(f => f.includes('股票股利') || f.includes('股票'))
-
   let count = 0
   for (const row of data.data) {
-    const code = colCode >= 0 ? row[colCode]?.trim() : null
-    const name = colName >= 0 ? row[colName]?.trim() : ''
-    const exDateRaw = colExDivDate >= 0 ? row[colExDivDate]?.trim() : null
-    if (!code || !exDateRaw || exDateRaw === '-' || exDateRaw === '') continue
+    const exDateRaw = row[0]?.trim()  // 資料日期 = 除息日，格式：115年07月02日
+    const code = row[1]?.trim()
+    const name = row[2]?.trim() ?? ''
+    const amount = parseDividend(row[5])  // 權值+息值
+    const type = row[6]?.trim() ?? '息'  // 息/權/權息
 
-    // 民國年轉西元：113/07/15 → 2024-07-15
+    if (!code || !exDateRaw) continue
+
     const exDate = twRocToIso(exDateRaw)
     if (!exDate) continue
 
-    const cash = parseDividend(colCash >= 0 ? row[colCash] : '0')
-    const stock = parseDividend(colStock >= 0 ? row[colStock] : '0')
+    // 依類型分配現金/股票股利
+    const cash = (type === '息' || type === '權息') ? amount : 0
+    const stock = (type === '權' || type === '權息') ? amount : 0
 
     try {
       await db.query(
@@ -63,7 +56,9 @@ export async function syncDividendSchedules() {
         [code, name, exDate, cash, stock]
       )
       count++
-    } catch {}
+    } catch (e) {
+      console.error('[dividend-sync] insert error:', code, e.message)
+    }
   }
 
   console.log(`[dividend-sync] upserted ${count} records`)
@@ -71,11 +66,16 @@ export async function syncDividendSchedules() {
 }
 
 function twRocToIso(raw) {
-  // 支援 113/07/15 或 1130715 格式
-  const m = raw.match(/^(\d{2,3})[\/\-](\d{2})[\/\-](\d{2})$/)
-  if (!m) return null
-  const year = parseInt(m[1]) + 1911
-  return `${year}-${m[2]}-${m[3]}`
+  // 支援 115年07月02日
+  const m1 = raw.match(/^(\d{2,3})年(\d{1,2})月(\d{1,2})日$/)
+  if (m1) {
+    const year = parseInt(m1[1]) + 1911
+    return `${year}-${String(m1[2]).padStart(2,'0')}-${String(m1[3]).padStart(2,'0')}`
+  }
+  // 支援 113/07/15
+  const m2 = raw.match(/^(\d{2,3})[\/\-](\d{2})[\/\-](\d{2})$/)
+  if (m2) return `${parseInt(m2[1]) + 1911}-${m2[2]}-${m2[3]}`
+  return null
 }
 
 function parseDividend(val) {
