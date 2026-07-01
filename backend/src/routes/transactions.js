@@ -9,7 +9,12 @@ router.get('/', authMiddleware, async (req, res) => {
     'SELECT * FROM transactions WHERE user_id = $1 ORDER BY date DESC, created_at DESC',
     [req.user.userId]
   )
-  res.json(rows)
+  res.json(rows.map(r => ({
+    ...r,
+    shares: Number(r.shares),
+    price: Number(r.price),
+    fee: Number(r.fee),
+  })))
 })
 
 router.post('/', authMiddleware, async (req, res) => {
