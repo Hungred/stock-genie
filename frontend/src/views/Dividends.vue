@@ -8,15 +8,67 @@ import axios from 'axios'
 const API = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 const store = usePortfolioStore()
-const { dividends, loading } = storeToRefs(store)
+const { dividends, holdings, loading } = storeToRefs(store)
 
 const upcoming = ref([])
 
-onMounted(async () => {
-  await store.fetchDividends()
+// ── 提醒設定 ────────────────────────────────────────────────────
+const showNotify = ref(false)
+const notifySettings = ref({ globalEnabled: true, globalDays: 1, perStock: {} })
+const savingNotify = ref(false)
+
+function stockEnabled(code) {
+  const s = notifySettings.value.perStock[code]
+  return s?.enabled === false ? false : true
+}
+function stockDays(code) {
+  return notifySettings.value.perStock[code]?.remind_days_before ?? null
+}
+
+async function saveGlobal() {
+  savingNotify.value = true
   try {
-    const { data } = await axios.get(`${API}/api/dividends/upcoming`)
-    upcoming.value = data
+    await axios.put(`${API}/api/dividends/notify-settings`, {
+      scope: 'ALL',
+      enabled: notifySettings.value.globalEnabled,
+      remind_days_before: notifySettings.value.globalDays,
+    })
+    ElMessage.success('已儲存')
+  } catch { ElMessage.error('儲存失敗') }
+  finally { savingNotify.value = false }
+}
+
+async function saveStock(code, enabled, days) {
+  const perStock = notifySettings.value.perStock
+  if (!perStock[code]) perStock[code] = {}
+  if (enabled !== undefined) perStock[code].enabled = enabled
+  if (days !== undefined) perStock[code].remind_days_before = days
+
+  savingNotify.value = true
+  try {
+    await axios.put(`${API}/api/dividends/notify-settings`, {
+      scope: code,
+      enabled: perStock[code].enabled ?? null,
+      remind_days_before: perStock[code].remind_days_before ?? null,
+    })
+    ElMessage.success('已儲存')
+  } catch { ElMessage.error('儲存失敗') }
+  finally { savingNotify.value = false }
+}
+
+// ── 掛載 ──────────────────────────────────────────────────────
+onMounted(async () => {
+  await Promise.all([
+    store.fetchDividends(),
+    store.fetchHoldings(),
+  ])
+  try {
+    const [upcomingRes, notifyRes] = await Promise.all([
+      axios.get(`${API}/api/dividends/upcoming`),
+      axios.get(`${API}/api/dividends/notify-settings`),
+    ])
+    upcoming.value = upcomingRes.data
+    notifySettings.value = notifyRes.data
   } catch {}
 })
 
@@ -24,7 +76,7 @@ const totalDividend = computed(() =>
   dividends.value.reduce((sum, d) => sum + d.amount, 0)
 )
 
-// 新增配息
+// ── 新增配息 ─────────────────────────────────────────────────
 const showDialog = ref(false)
 const submitting = ref(false)
 
@@ -62,7 +114,7 @@ async function handleSubmit() {
   finally { submitting.value = false }
 }
 
-// 刪除配息
+// ── 刪除配息 ─────────────────────────────────────────────────
 async function handleDelete(row) {
   try {
     await ElMessageBox.confirm(`確認刪除 ${row.date} ${row.code} 配息？`, '刪除確認', {
@@ -73,7 +125,7 @@ async function handleDelete(row) {
   } catch {}
 }
 
-// 編輯配息（auto 記錄）
+// ── 編輯配息（auto 記錄）────────────────────────────────────
 const editDialog = ref(false)
 const editRow = ref(null)
 const editSubmitting = ref(false)
@@ -140,6 +192,90 @@ async function handleEdit() {
       </div>
     </div>
 
+    <!-- 提醒設定 -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 mb-4 md:mb-6">
+      <div
+        class="p-3 md:p-4 flex items-center justify-between cursor-pointer select-none"
+        :class="showNotify ? 'border-b border-gray-100' : ''"
+        @click="showNotify = !showNotify"
+      >
+        <h2 class="font-semibold text-gray-700">⚙️ 配息提醒設定</h2>
+        <el-icon class="text-gray-400 transition-transform duration-200" :style="showNotify ? 'transform:rotate(180deg)' : ''">
+          <ArrowDown />
+        </el-icon>
+      </div>
+
+      <div v-if="showNotify" class="p-4 space-y-5">
+
+        <!-- 全域開關 -->
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="text-sm font-medium text-gray-800">全域提醒</div>
+            <div class="text-xs text-gray-400 mt-0.5">關閉後所有配息提醒都不會發送</div>
+          </div>
+          <el-switch v-model="notifySettings.globalEnabled" @change="saveGlobal" />
+        </div>
+
+        <!-- 預設提前天數 -->
+        <div v-if="notifySettings.globalEnabled" class="flex items-center justify-between">
+          <div>
+            <div class="text-sm font-medium text-gray-800">預設提前天數</div>
+            <div class="text-xs text-gray-400 mt-0.5">除息日前幾天發送提醒（無個股設定時適用）</div>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <el-input-number
+              v-model="notifySettings.globalDays"
+              :min="1" :max="30" size="small"
+              style="width: 90px"
+              @change="saveGlobal"
+            />
+            <span class="text-sm text-gray-500">天</span>
+          </div>
+        </div>
+
+        <!-- 個股設定 -->
+        <div v-if="notifySettings.globalEnabled && holdings.length">
+          <div class="text-sm font-medium text-gray-700 mb-3">個股設定</div>
+          <div class="space-y-1">
+            <div
+              v-for="h in holdings" :key="h.code"
+              class="flex items-center justify-between py-2.5 px-3 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="font-medium text-sm text-gray-800">{{ h.code }}</span>
+                <span class="text-xs text-gray-500 truncate">{{ h.name }}</span>
+                <el-tag v-if="!stockEnabled(h.code)" type="info" size="small">已停用</el-tag>
+              </div>
+              <div class="flex items-center gap-3 flex-shrink-0 ml-2">
+                <div class="flex items-center gap-1" v-if="stockEnabled(h.code)">
+                  <span class="text-xs text-gray-400">提前</span>
+                  <el-input-number
+                    :model-value="stockDays(h.code)"
+                    :min="1" :max="30" size="small"
+                    :placeholder="String(notifySettings.globalDays)"
+                    style="width: 75px"
+                    @change="(v) => saveStock(h.code, undefined, v)"
+                  />
+                  <span class="text-xs text-gray-400">天</span>
+                </div>
+                <el-switch
+                  :model-value="stockEnabled(h.code)"
+                  size="small"
+                  @change="(v) => saveStock(h.code, v, undefined)"
+                />
+              </div>
+            </div>
+          </div>
+          <p class="text-xs text-gray-400 mt-3">個股未設定天數時，沿用全域預設（{{ notifySettings.globalDays }} 天）</p>
+        </div>
+
+        <div v-if="notifySettings.globalEnabled && !holdings.length" class="text-sm text-gray-400 text-center py-2">
+          尚無持股，新增交易記錄後可設定個股提醒
+        </div>
+
+      </div>
+    </div>
+
     <!-- 配息歷史 -->
     <div class="bg-white rounded-xl shadow-sm border border-gray-100">
       <div class="p-3 md:p-4 border-b border-gray-100 flex items-center justify-between">
@@ -167,11 +303,9 @@ async function handleEdit() {
           <el-table-column label="" width="90" align="center">
             <template #default="{ row }">
               <el-tag v-if="row.source === 'auto'" type="warning" size="small" class="mr-1">自動</el-tag>
-              <el-button
-                v-if="row.source === 'auto'"
-                type="primary" link size="small"
-                @click="openEdit(row)"
-              ><el-icon><Edit /></el-icon></el-button>
+              <el-button v-if="row.source === 'auto'" type="primary" link size="small" @click="openEdit(row)">
+                <el-icon><Edit /></el-icon>
+              </el-button>
               <el-button v-else type="danger" link size="small" @click="handleDelete(row)">
                 <el-icon><Delete /></el-icon>
               </el-button>
@@ -228,7 +362,7 @@ async function handleEdit() {
             </div>
             <div>
               <div class="text-xs text-gray-500 mb-1">股票名稱</div>
-              <el-input v-model="row.name" placeholder="自動帶入" size="small" :loading="row.lookingUp" />
+              <el-input v-model="row.name" placeholder="自動帶入" size="small" />
             </div>
             <div>
               <div class="text-xs text-gray-500 mb-1">每股配息 *</div>

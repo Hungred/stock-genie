@@ -56,7 +56,7 @@ cd backend && node scripts/generate-richmenu.js
 | `views/Holdings.vue` | 持股明細與圖表 |
 | `views/Watchlist.vue` | 自選清單（`/watchlist`），含我的持股 tab、多清單管理、加入/移除股票 |
 | `views/Transactions.vue` | 交易記錄，支援多筆新增、刪除 |
-| `views/Dividends.vue` | 配息記錄，支援多筆新增（輸入代號自動帶名稱/股數）、刪除 |
+| `views/Dividends.vue` | 配息記錄、近期除息、提醒設定（折疊區塊）、配息歷史 |
 
 ## 資料庫 Schema（PostgreSQL / Supabase）
 
@@ -263,8 +263,12 @@ watchlist_stocks (id SERIAL, watchlist_id INTEGER, code TEXT, name TEXT, sort_or
 - Postback handler 在 `linebot.js` `handlePostback()`，寫入 `dividend_notify_settings` 並回覆確認
 
 ### 前端異動
-- `Dividends.vue`：顯示近期除息卡片、auto 記錄黃標 + 編輯 dialog
+- `Dividends.vue`：
+  - 近期除息卡片（30 天內持股除息）
+  - 提醒設定折疊區塊（全域 toggle + 天數、個股 toggle + 天數）
+  - auto 記錄黃標 + 編輯 dialog
 - `stores/portfolio.js`（無需改）：fetchDividends 已包含 source 欄位
+- 新用戶預設提醒開啟、前 1 天提醒（`getNotifySettings` fallback）
 
 ## Git 慣例
 
