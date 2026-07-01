@@ -2,7 +2,7 @@ import { Router } from 'express'
 import db from '../db/index.js'
 import { authMiddleware } from '../middleware/auth.js'
 import {
-  syncDividendSchedules,
+  processTwseData,
   getNotifySettings,
   getReminderDate,
   todayTW,
@@ -124,12 +124,12 @@ router.put('/notify-settings', authMiddleware, async (req, res) => {
 
 // ── 排程端點（GitHub Actions 呼叫，無需認證）─────────────────
 
-// POST /api/dividends/sync   抓 TWSE 資料
-router.post('/sync', async (req, res) => {
+// POST /api/dividends/sync-data   接收 GitHub Actions 傳來的 TWSE 資料（繞過 IP 封鎖）
+router.post('/sync-data', async (req, res) => {
   const secret = req.headers['x-cron-secret']
   if (secret !== process.env.CRON_SECRET) return res.status(401).json({ error: 'unauthorized' })
   try {
-    const count = await syncDividendSchedules()
+    const count = await processTwseData(req.body)
     res.json({ ok: true, count })
   } catch (e) {
     res.status(500).json({ error: e.message })

@@ -24,18 +24,30 @@ jobs:
   sync:
     name: 同步除權息資料
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'sync' || (github.event_name == 'schedule' && github.event.schedule == '0 0 * * 1-5')
+    if: >
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'sync') ||
+      (github.event_name == 'schedule' && github.event.schedule == '0 0 * * 1-5')
     steps:
-      - name: Call sync API
+      - name: 從 TWSE 抓資料並推送到 API
         run: |
-          curl -s -X POST "${{ secrets.API_URL }}/api/dividends/sync" \
+          TODAY=$(date -u +%Y%m%d)
+          FUTURE=$(date -u -d '+60 days' +%Y%m%d 2>/dev/null || date -u -v+60d +%Y%m%d)
+          URL="https://www.twse.com.tw/rwd/zh/exRight/TWT49U?response=json&strDate=${TODAY}&endDate=${FUTURE}"
+          echo "Fetching: $URL"
+          DATA=$(curl -sL "$URL" -H "User-Agent: Mozilla/5.0")
+          echo "TWSE rows: $(echo $DATA | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d.get("data",[])))')"
+          curl -s -X POST "${{ secrets.API_URL }}/api/dividends/sync-data" \
+            -H "Content-Type: application/json" \
             -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            -d "$DATA" \
             -w "\nHTTP %{http_code}"
 
   send-reminders:
     name: 推播配息提醒
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'send-reminders' || (github.event_name == 'schedule' && github.event.schedule == '30 0 * * 1-5')
+    if: >
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'send-reminders') ||
+      (github.event_name == 'schedule' && github.event.schedule == '30 0 * * 1-5')
     steps:
       - name: Call send-reminders API
         run: |
@@ -46,7 +58,9 @@ jobs:
   auto-create:
     name: 除息日自動建立配息記錄
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'auto-create' || (github.event_name == 'schedule' && github.event.schedule == '30 6 * * 1-5')
+    if: >
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'auto-create') ||
+      (github.event_name == 'schedule' && github.event.schedule == '30 6 * * 1-5')
     steps:
       - name: Call auto-create API
         run: |

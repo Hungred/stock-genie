@@ -83,6 +83,48 @@ function parseDividend(val) {
   return isNaN(n) ? 0 : n
 }
 
+// 處理 TWSE 傳入的 JSON 資料（由 GitHub Actions 傳來）
+export async function processTwseData(data) {
+  if (!data?.data || !Array.isArray(data.data)) {
+    console.log('[dividend-sync] invalid data, stat:', data?.stat)
+    return 0
+  }
+
+  let count = 0
+  for (const row of data.data) {
+    const exDateRaw = row[0]?.trim()
+    const code = row[1]?.trim()
+    const name = row[2]?.trim() ?? ''
+    const amount = parseDividend(row[5])
+    const type = row[6]?.trim() ?? '息'
+
+    if (!code || !exDateRaw) continue
+    const exDate = twRocToIso(exDateRaw)
+    if (!exDate) continue
+
+    const cash = (type === '息' || type === '權息') ? amount : 0
+    const stock = (type === '權' || type === '權息') ? amount : 0
+
+    try {
+      await db.query(
+        `INSERT INTO dividend_schedules (code, name, ex_date, dividend_cash, dividend_stock)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (code, ex_date) DO UPDATE SET
+           name = EXCLUDED.name,
+           dividend_cash = EXCLUDED.dividend_cash,
+           dividend_stock = EXCLUDED.dividend_stock`,
+        [code, name, exDate, cash, stock]
+      )
+      count++
+    } catch (e) {
+      console.error('[dividend-sync] insert error:', code, e.message)
+    }
+  }
+
+  console.log(`[dividend-sync] upserted ${count} records`)
+  return count
+}
+
 // 取得提醒設定（全域 + 個股）
 export async function getNotifySettings(userId) {
   const { rows } = await db.query(
