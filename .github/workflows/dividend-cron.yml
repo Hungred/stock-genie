@@ -1,0 +1,55 @@
+name: 配息排程
+
+on:
+  schedule:
+    # 每天 08:00 台灣時間（UTC 00:00）— 同步 TWSE 除權息資料
+    - cron: '0 0 * * 1-5'
+    # 每天 08:30 台灣時間（UTC 00:30）— 推播今日提醒
+    - cron: '30 0 * * 1-5'
+    # 每天 14:30 台灣時間（UTC 06:30）— 除息日自動建立配息記錄
+    - cron: '30 6 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: '手動執行哪個動作'
+        required: true
+        default: 'sync'
+        type: choice
+        options:
+          - sync
+          - send-reminders
+          - auto-create
+
+jobs:
+  sync:
+    name: 同步除權息資料
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'sync' || (github.event_name == 'schedule' && github.event.schedule == '0 0 * * 1-5')
+    steps:
+      - name: Call sync API
+        run: |
+          curl -s -X POST "${{ secrets.API_URL }}/api/dividends/sync" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            -w "\nHTTP %{http_code}"
+
+  send-reminders:
+    name: 推播配息提醒
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'send-reminders' || (github.event_name == 'schedule' && github.event.schedule == '30 0 * * 1-5')
+    steps:
+      - name: Call send-reminders API
+        run: |
+          curl -s -X POST "${{ secrets.API_URL }}/api/dividends/send-reminders" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            -w "\nHTTP %{http_code}"
+
+  auto-create:
+    name: 除息日自動建立配息記錄
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'auto-create' || (github.event_name == 'schedule' && github.event.schedule == '30 6 * * 1-5')
+    steps:
+      - name: Call auto-create API
+        run: |
+          curl -s -X POST "${{ secrets.API_URL }}/api/dividends/auto-create" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            -w "\nHTTP %{http_code}"

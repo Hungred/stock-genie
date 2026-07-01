@@ -205,6 +205,53 @@ watchlist_stocks (id SERIAL, watchlist_id INTEGER, code TEXT, name TEXT, sort_or
 - 環境變數一定要設 `JWT_SECRET`，否則 default 是 `changeme-set-in-env`
 - Render free tier 冷啟動 30–60 秒，LINE reply token 30 秒過期，建議用 UptimeRobot 每 14 分鐘 ping 防止休眠
 
+## 配息提醒系統
+
+### 資料表
+- `dividend_schedules`：TWSE 除權息公告（code, name, ex_date, dividend_cash, dividend_stock）
+- `dividend_notify_settings`：提醒設定（user_id, scope, enabled, remind_days_before）
+  - `scope='ALL'`：全域設定；`scope='0050'`：個股設定
+  - `remind_days_before=NULL`：個股沿用全域預設
+- `dividends.source`：`'manual'`（手動）或 `'auto'`（除息日自動建立）
+
+### 提醒邏輯
+1. 全域 OFF → 全部不提醒
+2. 全域 ON → 查個股設定
+   - 個股 OFF → 不提醒
+   - 個股有天數 → 用個股天數
+   - 無個股設定（新股票）→ 用全域預設天數（預設 1 天）
+3. 提醒日若落在週末 → 自動往前到週五
+
+### LINE 配息指令
+| 指令 | 功能 |
+|------|------|
+| `近期配息` | 持股 30 天內除息清單 |
+| `提醒設定` | 顯示目前所有設定 |
+| `提醒開啟 / 提醒關閉` | 全域開關 |
+| `提醒天數 3` | 全域預設改為前 3 天 |
+| `提醒 0050 開啟／關閉` | 個股開關 |
+| `提醒 0050 5天` | 個股前 5 天提醒 |
+
+### 排程端點（GitHub Actions 呼叫）
+需在 request header 帶 `x-cron-secret: <CRON_SECRET>`
+
+| 端點 | 時間 | 功能 |
+|------|------|------|
+| `POST /api/dividends/sync` | 08:00 台灣時間（週一至週五） | 抓 TWSE 未來 60 天除權息 |
+| `POST /api/dividends/send-reminders` | 08:30 台灣時間 | 推播今日提醒 |
+| `POST /api/dividends/auto-create` | 14:30 台灣時間 | 除息日自動建配息記錄 |
+
+### 環境變數（新增）
+- `CRON_SECRET`：排程端點驗證 secret，Render 後端 + GitHub Actions Secrets 都要設
+
+### GitHub Actions
+`.github/workflows/dividend-cron.yml`：三個 job 各自對應上方時間
+支援 `workflow_dispatch` 手動觸發（選 sync / send-reminders / auto-create）
+
+### 前端異動
+- `Dividends.vue`：顯示近期除息卡片、auto 記錄黃標 + 編輯 dialog
+- `stores/portfolio.js`（無需改）：fetchDividends 已包含 source 欄位
+
 ## Git 慣例
 
 - commit 訊息不加 `Co-Authored-By`

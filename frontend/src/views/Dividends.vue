@@ -8,23 +8,20 @@ import axios from 'axios'
 const API = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 const store = usePortfolioStore()
-const { holdings, dividends, loading } = storeToRefs(store)
+const { dividends, loading } = storeToRefs(store)
+
+const upcoming = ref([])
 
 onMounted(async () => {
-  await store.fetchHoldings()
   await store.fetchDividends()
+  try {
+    const { data } = await axios.get(`${API}/api/dividends/upcoming`)
+    upcoming.value = data
+  } catch {}
 })
 
 const totalDividend = computed(() =>
   dividends.value.reduce((sum, d) => sum + d.amount, 0)
-)
-
-const currentMonth = new Date().getMonth() + 1
-const upcomingDividends = computed(() =>
-  holdings.value.filter(h => {
-    if (!h.dividend_months) return false
-    return h.dividend_months.includes(currentMonth) || h.dividend_months.includes(currentMonth + 1)
-  })
 )
 
 // 新增配息
@@ -46,8 +43,6 @@ async function onCodeBlur(row) {
   try {
     const { data } = await axios.get(`${API}/api/stock/${code}`)
     if (data.name) row.name = data.name
-    const holding = holdings.value.find(h => h.code === code.toUpperCase())
-    if (holding && !row.shares) row.shares = holding.shares
   } catch {} finally { row.lookingUp = false }
 }
 
@@ -70,12 +65,38 @@ async function handleSubmit() {
 // 刪除配息
 async function handleDelete(row) {
   try {
-    await ElMessageBox.confirm(`確認刪除 ${row.date} ${row.code} 配息 ${row.amount?.toLocaleString()} 元？`, '刪除確認', {
+    await ElMessageBox.confirm(`確認刪除 ${row.date} ${row.code} 配息？`, '刪除確認', {
       confirmButtonText: '刪除', cancelButtonText: '取消', type: 'warning',
     })
     await store.deleteDividend(row.id)
     ElMessage.success('已刪除')
   } catch {}
+}
+
+// 編輯配息（auto 記錄）
+const editDialog = ref(false)
+const editRow = ref(null)
+const editSubmitting = ref(false)
+
+function openEdit(row) {
+  editRow.value = { ...row }
+  editDialog.value = true
+}
+
+async function handleEdit() {
+  editSubmitting.value = true
+  try {
+    await axios.put(`${API}/api/dividends/${editRow.value.id}`, {
+      date: editRow.value.date,
+      dividend_per_share: editRow.value.dividend_per_share,
+      shares: editRow.value.shares,
+      amount: editRow.value.amount,
+    })
+    await store.fetchDividends()
+    editDialog.value = false
+    ElMessage.success('已更新')
+  } catch { ElMessage.error('更新失敗') }
+  finally { editSubmitting.value = false }
 }
 </script>
 
@@ -91,26 +112,30 @@ async function handleDelete(row) {
         <p class="text-xs text-gray-400">元</p>
       </div>
       <div class="bg-white rounded-xl p-3 md:p-4 shadow-sm border border-gray-100">
-        <p class="text-xs md:text-sm text-gray-500 mb-1">近期配息提醒</p>
-        <p class="text-xl md:text-2xl font-bold text-orange-500">{{ upcomingDividends.length }}</p>
-        <p class="text-xs text-gray-400">支股票本月/下月配息</p>
+        <p class="text-xs md:text-sm text-gray-500 mb-1">近期除息</p>
+        <p class="text-xl md:text-2xl font-bold text-orange-500">{{ upcoming.length }}</p>
+        <p class="text-xs text-gray-400">支股票 30 天內除息</p>
       </div>
     </div>
 
-    <!-- 近期配息提醒 -->
-    <div class="bg-white rounded-xl shadow-sm border border-gray-100 mb-4 md:mb-6" v-if="upcomingDividends.length">
+    <!-- 近期除息清單 -->
+    <div v-if="upcoming.length" class="bg-white rounded-xl shadow-sm border border-gray-100 mb-4 md:mb-6">
       <div class="p-3 md:p-4 border-b border-gray-100">
-        <h2 class="font-semibold text-gray-700">近期配息提醒</h2>
+        <h2 class="font-semibold text-gray-700">📅 近期除息（未來 30 天）</h2>
       </div>
-      <div class="p-3 md:p-4 flex flex-wrap gap-2 md:gap-3">
-        <div
-          v-for="h in upcomingDividends"
-          :key="h.code"
-          class="flex items-center gap-2 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2"
-        >
-          <span class="font-medium text-gray-700 text-sm">{{ h.code }}</span>
-          <span class="text-xs text-gray-500">{{ h.name }}</span>
-          <el-tag type="warning" size="small">{{ h.dividend_frequency }}</el-tag>
+      <div class="divide-y divide-gray-50">
+        <div v-for="r in upcoming" :key="r.code + r.ex_date" class="flex items-center justify-between px-4 py-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="font-semibold text-sm text-gray-800">{{ r.code }}</span>
+              <span class="text-xs text-gray-500">{{ r.name }}</span>
+            </div>
+            <div class="text-xs text-gray-400 mt-0.5">除息日：{{ r.ex_date?.slice(0,10) }}</div>
+          </div>
+          <div class="text-right">
+            <div class="text-sm font-medium text-gray-700">每股 {{ r.dividend_cash }} 元</div>
+            <div class="text-xs text-orange-500 font-medium">預計領 {{ r.estimated_amount?.toLocaleString() }} 元</div>
+          </div>
         </div>
       </div>
     </div>
@@ -129,19 +154,25 @@ async function handleDelete(row) {
         <el-table :data="dividends" v-loading="loading" stripe>
           <el-table-column prop="date" label="配息日期" width="120" />
           <el-table-column prop="code" label="代號" width="90" />
-          <el-table-column prop="name" label="名稱" min-width="130" />
-          <el-table-column prop="dividend_per_share" label="每股配息" width="110" align="right">
-            <template #default="{ row }">{{ row.dividend_per_share?.toFixed(3) }}</template>
+          <el-table-column prop="name" label="名稱" min-width="120" />
+          <el-table-column label="每股配息" width="110" align="right">
+            <template #default="{ row }">{{ Number(row.dividend_per_share)?.toFixed(3) }}</template>
           </el-table-column>
-          <el-table-column prop="shares" label="持有股數" width="100" align="right" />
-          <el-table-column prop="amount" label="實領金額" width="120" align="right">
+          <el-table-column prop="shares" label="股數" width="90" align="right" />
+          <el-table-column label="實領金額" width="120" align="right">
             <template #default="{ row }">
               <span class="text-blue-600 font-medium">{{ row.amount?.toLocaleString() }}</span>
             </template>
           </el-table-column>
-          <el-table-column width="60" align="center">
+          <el-table-column label="" width="90" align="center">
             <template #default="{ row }">
-              <el-button type="danger" link size="small" @click="handleDelete(row)">
+              <el-tag v-if="row.source === 'auto'" type="warning" size="small" class="mr-1">自動</el-tag>
+              <el-button
+                v-if="row.source === 'auto'"
+                type="primary" link size="small"
+                @click="openEdit(row)"
+              ><el-icon><Edit /></el-icon></el-button>
+              <el-button v-else type="danger" link size="small" @click="handleDelete(row)">
                 <el-icon><Delete /></el-icon>
               </el-button>
             </template>
@@ -151,23 +182,23 @@ async function handleDelete(row) {
 
       <!-- 手機卡片列表 -->
       <div class="md:hidden divide-y divide-gray-100" v-loading="loading">
-        <div
-          v-for="row in dividends"
-          :key="row.id"
-          class="flex items-center justify-between px-4 py-3"
-        >
+        <div v-for="row in dividends" :key="row.id" class="flex items-center justify-between px-4 py-3">
           <div class="flex-1 min-w-0">
-            <div class="flex items-center gap-2 mb-0.5">
+            <div class="flex items-center gap-2 mb-0.5 flex-wrap">
               <span class="font-semibold text-gray-800 text-sm">{{ row.code }}</span>
               <span class="text-gray-500 text-xs">{{ row.name }}</span>
+              <el-tag v-if="row.source === 'auto'" type="warning" size="small">自動建立，請確認</el-tag>
             </div>
             <div class="text-xs text-gray-400">
-              {{ row.date }} · {{ row.shares }}股 × {{ row.dividend_per_share?.toFixed(3) }}
+              {{ row.date }} · {{ row.shares }}股 × {{ Number(row.dividend_per_share)?.toFixed(3) }}
             </div>
           </div>
           <div class="flex items-center gap-2 ml-2">
             <div class="text-blue-600 font-bold text-sm">+{{ row.amount?.toLocaleString() }}</div>
-            <el-button type="danger" link size="small" @click="handleDelete(row)">
+            <el-button v-if="row.source === 'auto'" type="primary" link size="small" @click="openEdit(row)">
+              <el-icon><Edit /></el-icon>
+            </el-button>
+            <el-button v-else type="danger" link size="small" @click="handleDelete(row)">
               <el-icon><Delete /></el-icon>
             </el-button>
           </div>
@@ -176,7 +207,6 @@ async function handleDelete(row) {
           尚無配息記錄
         </div>
       </div>
-
     </div>
 
     <!-- 新增配息 Dialog -->
@@ -208,22 +238,51 @@ async function handleDelete(row) {
               <div class="text-xs text-gray-500 mb-1">股數 *</div>
               <el-input-number v-model="row.shares" :min="1" size="small" class="w-full" />
             </div>
-            <div class="col-span-2 flex items-center" v-if="row.dividend_per_share && row.shares">
+            <div class="col-span-2" v-if="row.dividend_per_share && row.shares">
               <span class="text-sm text-gray-500">實領金額：<span class="font-medium text-blue-600">{{ (row.dividend_per_share * row.shares).toFixed(0) }} 元</span></span>
             </div>
           </div>
         </div>
       </div>
       <div class="mt-3">
-        <el-button size="small" @click="addRow" class="w-full" dashed>
+        <el-button size="small" @click="addRow" class="w-full">
           <el-icon class="mr-1"><Plus /></el-icon>再新增一筆
         </el-button>
       </div>
       <template #footer>
         <el-button @click="showDialog = false; rows = [emptyRow()]">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleSubmit">
-          確認新增（{{ rows.length }} 筆）
-        </el-button>
+        <el-button type="primary" :loading="submitting" @click="handleSubmit">確認新增（{{ rows.length }} 筆）</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 編輯配息 Dialog（auto 記錄） -->
+    <el-dialog v-model="editDialog" title="確認配息金額" :width="'96vw'" style="max-width: 480px">
+      <div v-if="editRow" class="space-y-3">
+        <el-alert type="warning" :closable="false" title="此記錄由系統自動建立，請確認金額是否正確" />
+        <div class="grid grid-cols-2 gap-3 mt-3">
+          <div>
+            <div class="text-xs text-gray-500 mb-1">日期</div>
+            <el-date-picker v-model="editRow.date" type="date" value-format="YYYY-MM-DD" class="w-full" size="small" />
+          </div>
+          <div>
+            <div class="text-xs text-gray-500 mb-1">每股配息</div>
+            <el-input-number v-model="editRow.dividend_per_share" :precision="4" :min="0" size="small" class="w-full"
+              @change="editRow.amount = parseFloat((editRow.dividend_per_share * editRow.shares).toFixed(0))" />
+          </div>
+          <div>
+            <div class="text-xs text-gray-500 mb-1">股數</div>
+            <el-input-number v-model="editRow.shares" :min="1" size="small" class="w-full"
+              @change="editRow.amount = parseFloat((editRow.dividend_per_share * editRow.shares).toFixed(0))" />
+          </div>
+          <div>
+            <div class="text-xs text-gray-500 mb-1">實領金額</div>
+            <el-input-number v-model="editRow.amount" :min="0" size="small" class="w-full" />
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="editDialog = false">取消</el-button>
+        <el-button type="primary" :loading="editSubmitting" @click="handleEdit">確認儲存</el-button>
       </template>
     </el-dialog>
 

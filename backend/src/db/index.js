@@ -60,6 +60,28 @@ export async function initDb() {
       created_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE(watchlist_id, code)
     );
+
+    CREATE TABLE IF NOT EXISTS dividend_schedules (
+      id SERIAL PRIMARY KEY,
+      code TEXT NOT NULL,
+      name TEXT DEFAULT '',
+      ex_date DATE NOT NULL,
+      dividend_cash NUMERIC DEFAULT 0,
+      dividend_stock NUMERIC DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(code, ex_date)
+    );
+
+    CREATE TABLE IF NOT EXISTS dividend_notify_settings (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      scope TEXT NOT NULL,
+      enabled BOOLEAN DEFAULT true,
+      remind_days_before INTEGER DEFAULT NULL,
+      UNIQUE(user_id, scope)
+    );
+
+    ALTER TABLE dividends ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'manual';
   `)
 }
 

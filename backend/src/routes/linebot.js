@@ -8,6 +8,7 @@ import db from '../db/index.js'
 import { getStockPrice, getStockInfo, getFullQuote, getMultiplePrices } from '../services/stockPrice.js'
 import { calcHoldings } from '../services/portfolio.js'
 import { signToken } from '../middleware/auth.js'
+import { getNotifySettings, todayTW } from '../services/dividendSchedule.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -31,7 +32,8 @@ const QUICK_REPLY = {
     { type: 'action', action: { type: 'message', label: '📊 損益', text: '損益' } },
     { type: 'action', action: { type: 'message', label: '📋 持股', text: '持股' } },
     { type: 'action', action: { type: 'message', label: '⭐ 自選', text: '自選' } },
-    { type: 'action', action: { type: 'uri', label: '👤 我的帳號', uri: LIFF_ID ? `https://liff.line.me/${LIFF_ID}` : WEB_URL } },
+    { type: 'action', action: { type: 'message', label: '📅 近期配息', text: '近期配息' } },
+    { type: 'action', action: { type: 'message', label: '⚙️ 提醒設定', text: '提醒設定' } },
     { type: 'action', action: { type: 'uri', label: '🖥️ 開啟網頁', uri: WEB_URL } },
   ],
 }
@@ -288,6 +290,13 @@ const HELP_MSG =
   '多筆配息也支援換行：\n' +
   '配息 0050 1.5 255\n' +
   '配息 00878 0.48 350\n\n' +
+  '【配息提醒】\n' +
+  '近期配息 → 持股 30 天內除息清單\n' +
+  '提醒設定 → 顯示目前提醒設定\n' +
+  '提醒開啟 / 提醒關閉 → 全域開關\n' +
+  '提醒天數 3 → 全域預設前 3 天提醒\n' +
+  '提醒 0050 開啟／關閉 → 個股開關\n' +
+  '提醒 0050 5天 → 個股前 5 天提醒\n\n' +
   '【帳號】\n' +
   '綁定 / 登入 / 我的帳號 → 開啟綁定連結\n' +
   '指令說明 / 說明 / help → 顯示此說明'
@@ -359,6 +368,99 @@ async function handleMessage(event) {
   // 指令說明
   if (text === '指令說明' || text === '說明' || text === 'help') {
     return reply(client, event.replyToken, HELP_MSG)
+  }
+
+  // 近期配息
+  if (text === '近期配息') {
+    const today = todayTW()
+    const future = new Date(today); future.setDate(future.getDate() + 30)
+    const futureStr = future.toISOString().slice(0, 10)
+    const holdings = await calcHoldings(user.id)
+    if (!holdings.length) return reply(client, event.replyToken, '目前沒有持股資料')
+    const codes = holdings.map(h => h.code)
+    const { rows } = await db.query(
+      `SELECT * FROM dividend_schedules WHERE code = ANY($1) AND ex_date >= $2 AND ex_date <= $3 ORDER BY ex_date ASC`,
+      [codes, today, futureStr]
+    )
+    if (!rows.length) return reply(client, event.replyToken, '📅 未來 30 天內無持股除息資料\n\n資料每天 08:00 自動更新')
+    let msg = '📅 近期配息（未來 30 天）\n\n'
+    for (const r of rows) {
+      const h = holdings.find(h => h.code === r.code)
+      const est = (Number(r.dividend_cash) * (h?.shares ?? 0)).toFixed(0)
+      const exDate = r.ex_date.toISOString?.().slice(0, 10) ?? r.ex_date
+      msg += `${r.code} ${r.name}\n除息日：${exDate}\n每股：${r.dividend_cash} 元　預計領：${est} 元\n\n`
+    }
+    return reply(client, event.replyToken, msg.trim())
+  }
+
+  // 提醒設定 - 顯示
+  if (text === '提醒設定') {
+    const s = await getNotifySettings(user.id)
+    let msg = `⚙️ 配息提醒設定\n\n全域狀態：${s.globalEnabled ? '✅ 開啟' : '❌ 關閉'}\n全域預設：前 ${s.globalDays} 天`
+    const overrides = Object.entries(s.perStock)
+    if (overrides.length) {
+      msg += '\n\n個股設定：'
+      for (const [code, cfg] of overrides) {
+        if (!cfg.enabled) {
+          msg += `\n  ${code} ❌ 已關閉`
+        } else if (cfg.remind_days_before != null) {
+          msg += `\n  ${code} ✅ 前 ${cfg.remind_days_before} 天`
+        }
+      }
+    }
+    msg += '\n\n─────────────\n提醒開啟／關閉\n提醒天數 3\n提醒 0050 開啟／關閉\n提醒 0050 5天'
+    return reply(client, event.replyToken, msg)
+  }
+
+  // 提醒開啟 / 提醒關閉
+  if (text === '提醒開啟' || text === '提醒關閉') {
+    const enabled = text === '提醒開啟'
+    await db.query(
+      `INSERT INTO dividend_notify_settings (user_id, scope, enabled) VALUES ($1, 'ALL', $2)
+       ON CONFLICT (user_id, scope) DO UPDATE SET enabled = EXCLUDED.enabled`,
+      [user.id, enabled]
+    )
+    return reply(client, event.replyToken, `${enabled ? '✅' : '❌'} 配息提醒已全域${enabled ? '開啟' : '關閉'}`)
+  }
+
+  // 提醒天數 N
+  const daysMatch = text.match(/^提醒天數\s+(\d+)$/)
+  if (daysMatch) {
+    const days = parseInt(daysMatch[1])
+    if (days < 1 || days > 30) return reply(client, event.replyToken, '請輸入 1–30 之間的天數')
+    await db.query(
+      `INSERT INTO dividend_notify_settings (user_id, scope, enabled, remind_days_before) VALUES ($1, 'ALL', true, $2)
+       ON CONFLICT (user_id, scope) DO UPDATE SET remind_days_before = EXCLUDED.remind_days_before`,
+      [user.id, days]
+    )
+    return reply(client, event.replyToken, `✅ 全域預設：除息日前 ${days} 天提醒`)
+  }
+
+  // 提醒 0050 開啟／關閉／N天
+  const stockNotifyMatch = text.match(/^提醒\s+([A-Za-z0-9]{4,6})\s+(.+)$/)
+  if (stockNotifyMatch) {
+    const code = stockNotifyMatch[1].toUpperCase()
+    const cmd = stockNotifyMatch[2].trim()
+    if (cmd === '開啟' || cmd === '關閉') {
+      const enabled = cmd === '開啟'
+      await db.query(
+        `INSERT INTO dividend_notify_settings (user_id, scope, enabled) VALUES ($1, $2, $3)
+         ON CONFLICT (user_id, scope) DO UPDATE SET enabled = EXCLUDED.enabled`,
+        [user.id, code, enabled]
+      )
+      return reply(client, event.replyToken, `${enabled ? '✅' : '❌'} ${code} 配息提醒已${enabled ? '開啟' : '關閉'}`)
+    }
+    const dMatch = cmd.match(/^(\d+)天$/)
+    if (dMatch) {
+      const days = parseInt(dMatch[1])
+      if (days < 1 || days > 30) return reply(client, event.replyToken, '請輸入 1–30 之間的天數')
+      await db.query(
+        `INSERT INTO dividend_notify_settings (user_id, scope, enabled, remind_days_before) VALUES ($1, $2, true, $3)
+         ON CONFLICT (user_id, scope) DO UPDATE SET enabled = true, remind_days_before = EXCLUDED.remind_days_before`,
+        [user.id, code, days]
+      )
+      return reply(client, event.replyToken, `✅ ${code} 個別設定：除息日前 ${days} 天提醒`)
+    }
   }
 
   // 綁定帳號
