@@ -86,57 +86,84 @@ function buildStockFlex(code, quote, holding) {
   const price = quote.price
   const priceStr = price != null ? price.toString() : '無法取得'
   const changeColor = quote.change == null ? '#666666' : quote.change >= 0 ? '#e03131' : '#2f9e44'
-  const changeStr = quote.change != null
-    ? `${quote.change >= 0 ? '▲' : '▼'}${Math.abs(quote.change).toFixed(2)}  ${quote.changePercent >= 0 ? '+' : ''}${quote.changePercent?.toFixed(2)}%`
+  const arrowStr = quote.change != null
+    ? `${quote.change >= 0 ? '▲' : '▼'}${Math.abs(quote.change).toFixed(2)}`
+    : ''
+  const pctStr = quote.changePercent != null
+    ? `${quote.changePercent >= 0 ? '+' : ''}${quote.changePercent.toFixed(2)}%`
     : ''
 
-  const bodyContents = []
-
-  // 開高低量
-  if (quote.open != null) {
-    bodyContents.push({
-      type: 'box', layout: 'horizontal', spacing: 'sm',
+  const bodyContents = [
+    // 開高低量（4 欄）
+    {
+      type: 'box', layout: 'horizontal', spacing: 'none',
       contents: [
-        { type: 'text', text: '開', size: 'xs', color: '#888888', flex: 1 },
-        { type: 'text', text: `${quote.open}`, size: 'xs', flex: 2 },
-        { type: 'text', text: '高', size: 'xs', color: '#e03131', flex: 1 },
-        { type: 'text', text: `${quote.high}`, size: 'xs', color: '#e03131', flex: 2 },
+        {
+          type: 'box', layout: 'vertical', flex: 1, spacing: 'xs',
+          contents: [
+            { type: 'text', text: '開盤', size: 'xxs', color: '#999999' },
+            { type: 'text', text: `${quote.open ?? '-'}`, size: 'sm', color: '#333333' },
+          ],
+        },
+        {
+          type: 'box', layout: 'vertical', flex: 1, spacing: 'xs',
+          contents: [
+            { type: 'text', text: '最高', size: 'xxs', color: '#e03131' },
+            { type: 'text', text: `${quote.high ?? '-'}`, size: 'sm', color: '#e03131', weight: 'bold' },
+          ],
+        },
+        {
+          type: 'box', layout: 'vertical', flex: 1, spacing: 'xs',
+          contents: [
+            { type: 'text', text: '最低', size: 'xxs', color: '#2f9e44' },
+            { type: 'text', text: `${quote.low ?? '-'}`, size: 'sm', color: '#2f9e44', weight: 'bold' },
+          ],
+        },
+        {
+          type: 'box', layout: 'vertical', flex: 1, spacing: 'xs',
+          contents: [
+            { type: 'text', text: '成交量', size: 'xxs', color: '#999999' },
+            { type: 'text', text: `${quote.volumeLots ?? '-'}張`, size: 'sm', color: '#333333' },
+          ],
+        },
       ],
-    })
-    bodyContents.push({
-      type: 'box', layout: 'horizontal', spacing: 'sm',
-      contents: [
-        { type: 'text', text: '低', size: 'xs', color: '#2f9e44', flex: 1 },
-        { type: 'text', text: `${quote.low}`, size: 'xs', color: '#2f9e44', flex: 2 },
-        { type: 'text', text: '量', size: 'xs', color: '#888888', flex: 1 },
-        { type: 'text', text: `${quote.volumeLots ?? '-'}張`, size: 'xs', flex: 2 },
-      ],
-    })
-  }
+    },
+  ]
 
   // 持倉資訊
   if (holding && price != null) {
-    const avgCost = (holding.total_cost / holding.shares)
+    const avgCost = holding.total_cost / holding.shares
     const pnl = price * holding.shares - holding.total_cost
-    const pnlPct = (pnl / holding.total_cost * 100)
+    const pnlPct = (pnl / holding.total_cost) * 100
     bodyContents.push({ type: 'separator', margin: 'md' })
     bodyContents.push({
-      type: 'box', layout: 'horizontal', margin: 'md',
+      type: 'box', layout: 'horizontal', margin: 'md', spacing: 'none',
       contents: [
-        { type: 'text', text: '持倉', size: 'xs', color: '#888888', flex: 1 },
-        { type: 'text', text: `${holding.shares}股 · 均 ${avgCost.toFixed(2)}`, size: 'xs', flex: 3 },
-      ],
-    })
-    bodyContents.push({
-      type: 'box', layout: 'horizontal',
-      contents: [
-        { type: 'text', text: '損益', size: 'xs', color: '#888888', flex: 1 },
         {
-          type: 'text',
-          text: `${pnl >= 0 ? '+' : ''}${pnl.toFixed(0)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%)`,
-          size: 'xs', weight: 'bold',
-          color: pnl >= 0 ? '#e03131' : '#2f9e44',
-          flex: 3,
+          type: 'box', layout: 'vertical', flex: 1, spacing: 'xs',
+          contents: [
+            { type: 'text', text: '持股', size: 'xxs', color: '#999999' },
+            { type: 'text', text: `${holding.shares}股`, size: 'sm', color: '#333333' },
+          ],
+        },
+        {
+          type: 'box', layout: 'vertical', flex: 1, spacing: 'xs',
+          contents: [
+            { type: 'text', text: '均成本', size: 'xxs', color: '#999999' },
+            { type: 'text', text: `${avgCost.toFixed(2)}`, size: 'sm', color: '#333333' },
+          ],
+        },
+        {
+          type: 'box', layout: 'vertical', flex: 2, spacing: 'xs',
+          contents: [
+            { type: 'text', text: '未實現損益', size: 'xxs', color: '#999999' },
+            {
+              type: 'text',
+              text: `${pnl >= 0 ? '+' : ''}${pnl.toFixed(0)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%)`,
+              size: 'sm', weight: 'bold',
+              color: pnl >= 0 ? '#e03131' : '#2f9e44',
+            },
+          ],
         },
       ],
     })
@@ -144,41 +171,66 @@ function buildStockFlex(code, quote, holding) {
 
   return {
     type: 'bubble',
+    size: 'kilo',
     header: {
-      type: 'box', layout: 'horizontal', paddingAll: '14px',
+      type: 'box', layout: 'vertical', paddingAll: '12px',
       backgroundColor: '#f8f9fa',
       contents: [
         {
-          type: 'box', layout: 'vertical', flex: 1,
+          type: 'box', layout: 'horizontal',
           contents: [
-            { type: 'text', text: quote.name || code, weight: 'bold', size: 'lg', color: '#1a1a1a' },
-            { type: 'text', text: code, size: 'xs', color: '#888888' },
+            {
+              type: 'box', layout: 'vertical', flex: 1,
+              contents: [
+                { type: 'text', text: quote.name || code, weight: 'bold', size: 'md', color: '#1a1a1a' },
+                { type: 'text', text: code, size: 'xxs', color: '#999999', margin: 'xs' },
+              ],
+            },
+            {
+              type: 'box', layout: 'vertical', alignItems: 'flex-end',
+              contents: [
+                { type: 'text', text: priceStr, weight: 'bold', size: 'xl', color: changeColor },
+                {
+                  type: 'box', layout: 'horizontal', spacing: 'xs',
+                  contents: [
+                    { type: 'text', text: arrowStr, size: 'xxs', color: changeColor },
+                    { type: 'text', text: pctStr, size: 'xxs', color: changeColor },
+                  ],
+                },
+              ],
+            },
           ],
         },
         {
-          type: 'box', layout: 'vertical', alignItems: 'flex-end',
-          contents: [
-            { type: 'text', text: priceStr, weight: 'bold', size: 'xl', color: changeColor },
-            { type: 'text', text: changeStr, size: 'xs', color: changeColor },
-          ],
+          type: 'text',
+          text: `更新 ${quote.updatedAt ?? ''}`,
+          size: 'xxs', color: '#bbbbbb', margin: 'sm',
         },
       ],
     },
     body: {
-      type: 'box', layout: 'vertical', paddingAll: '12px',
-      spacing: 'sm',
-      contents: bodyContents.length ? bodyContents : [
-        { type: 'text', text: '暫無詳細資料', size: 'sm', color: '#888888' },
-      ],
+      type: 'box', layout: 'vertical', paddingAll: '12px', spacing: 'md',
+      contents: bodyContents,
     },
     footer: {
-      type: 'box', layout: 'horizontal', spacing: 'xs', paddingAll: '8px',
+      type: 'box', layout: 'vertical', spacing: 'xs', paddingAll: '8px',
       contents: [
-        { type: 'button', action: { type: 'message', label: '即時', text: code }, style: 'secondary', height: 'sm', flex: 1 },
-        { type: 'button', action: { type: 'message', label: 'K線', text: `${code} K線` }, style: 'secondary', height: 'sm', flex: 1 },
-        { type: 'button', action: { type: 'message', label: 'EPS', text: `${code} EPS` }, style: 'secondary', height: 'sm', flex: 1 },
-        { type: 'button', action: { type: 'message', label: '股利', text: `${code} 股利` }, style: 'secondary', height: 'sm', flex: 1 },
-        { type: 'button', action: { type: 'message', label: '+自選', text: `加自選 ${code}` }, style: 'primary', color: '#FF6B35', height: 'sm', flex: 1 },
+        // 上排：4 個資訊按鈕
+        {
+          type: 'box', layout: 'horizontal', spacing: 'xs',
+          contents: [
+            { type: 'button', action: { type: 'message', label: '即時', text: code }, style: 'secondary', height: 'sm', flex: 1 },
+            { type: 'button', action: { type: 'message', label: 'K線', text: `${code} K線` }, style: 'secondary', height: 'sm', flex: 1 },
+            { type: 'button', action: { type: 'message', label: 'EPS', text: `${code} EPS` }, style: 'secondary', height: 'sm', flex: 1 },
+            { type: 'button', action: { type: 'message', label: '股利', text: `${code} 股利` }, style: 'secondary', height: 'sm', flex: 1 },
+          ],
+        },
+        // 下排：加入自選（全寬橘色）
+        {
+          type: 'button',
+          action: { type: 'message', label: '⭐ 加入自選', text: `加自選 ${code}` },
+          style: 'primary', color: '#FF6B35', height: 'sm',
+        },
       ],
     },
   }

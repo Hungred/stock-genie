@@ -56,6 +56,11 @@ export async function getFullQuote(code) {
     const change = price != null && prevClose != null ? price - prevClose : null
     const changePercent = change != null && prevClose ? (change / prevClose) * 100 : null
     const volumeLots = data.volume != null ? Math.round(data.volume / 1000) : null
+    // 股價更新時間：台灣時間 HH:MM
+    const now = new Date()
+    const twTime = new Date(now.getTime() + 8 * 60 * 60 * 1000)
+    const updatedAt = `${String(twTime.getUTCHours()).padStart(2, '0')}:${String(twTime.getUTCMinutes()).padStart(2, '0')}`
+
     return {
       name: data.name ?? null,
       price,
@@ -67,6 +72,7 @@ export async function getFullQuote(code) {
       low: data.lowPrice ?? null,
       volumeLots,
       isOpen: isMarketOpen(),
+      updatedAt,
     }
   } catch {
     return null
