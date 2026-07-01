@@ -38,26 +38,6 @@ router.post('/', authMiddleware, async (req, res) => {
   res.status(201).json({ id: rows[0].id })
 })
 
-router.put('/:id', authMiddleware, async (req, res) => {
-  const { date, dividend_per_share, shares, amount } = req.body
-  await db.query(
-    `UPDATE dividends SET
-       date = COALESCE($1, date),
-       dividend_per_share = COALESCE($2, dividend_per_share),
-       shares = COALESCE($3, shares),
-       amount = COALESCE($4, amount),
-       source = 'manual'
-     WHERE id = $5 AND user_id = $6`,
-    [date, dividend_per_share, shares, amount, req.params.id, req.user.userId]
-  )
-  res.json({ ok: true })
-})
-
-router.delete('/:id', authMiddleware, async (req, res) => {
-  await db.query('DELETE FROM dividends WHERE id = $1 AND user_id = $2', [req.params.id, req.user.userId])
-  res.json({ ok: true })
-})
-
 // ── 近期除息（持股中 30 天內有除息）──────────────────────────
 
 router.get('/upcoming', authMiddleware, async (req, res) => {
@@ -119,6 +99,28 @@ router.put('/notify-settings', authMiddleware, async (req, res) => {
        remind_days_before = COALESCE(EXCLUDED.remind_days_before, dividend_notify_settings.remind_days_before)`,
     [req.user.userId, scope, enabled ?? null, remind_days_before ?? null]
   )
+  res.json({ ok: true })
+})
+
+// ── 配息記錄 /:id（放最後，避免吃掉 /upcoming /notify-settings）──
+
+router.put('/:id', authMiddleware, async (req, res) => {
+  const { date, dividend_per_share, shares, amount } = req.body
+  await db.query(
+    `UPDATE dividends SET
+       date = COALESCE($1, date),
+       dividend_per_share = COALESCE($2, dividend_per_share),
+       shares = COALESCE($3, shares),
+       amount = COALESCE($4, amount),
+       source = 'manual'
+     WHERE id = $5 AND user_id = $6`,
+    [date, dividend_per_share, shares, amount, req.params.id, req.user.userId]
+  )
+  res.json({ ok: true })
+})
+
+router.delete('/:id', authMiddleware, async (req, res) => {
+  await db.query('DELETE FROM dividends WHERE id = $1 AND user_id = $2', [req.params.id, req.user.userId])
   res.json({ ok: true })
 })
 
