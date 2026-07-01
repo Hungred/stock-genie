@@ -178,21 +178,93 @@ router.post('/send-reminders', async (req, res) => {
 
       if (!toRemind.length) continue
 
-      let msg = `📅 配息提醒（${toRemind.length} 支股票即將除息）\n\n`
-      for (const { holding, schedule, days } of toRemind) {
+      const bubbles = toRemind.map(({ holding, schedule, days }) => {
         const cash = Number(schedule.dividend_cash)
-        const est = (cash * holding.shares).toFixed(0)
+        const est = Math.round(cash * holding.shares).toLocaleString()
         const exDate = schedule.ex_date.toISOString().slice(0, 10)
         const label = days === 1 ? '明天除息，今天是最後買進日' : `${days} 天後除息`
-        msg += `${holding.code} ${holding.name}\n`
-        msg += `除息日：${exDate}（${label}）\n`
-        msg += `每股現金：${cash} 元\n`
-        msg += `你持有 ${holding.shares} 股 → 預計領 ${est} 元\n\n`
-      }
-      msg += `─────────────\n關閉提醒：提醒關閉`
+        const webUrl = `${process.env.WEB_URL || 'https://stock-genie-web.onrender.com'}/dividends`
+
+        return {
+          type: 'bubble',
+          header: {
+            type: 'box',
+            layout: 'vertical',
+            backgroundColor: '#E8660A',
+            paddingAll: 'lg',
+            contents: [
+              { type: 'text', text: '📅 配息提醒', color: '#FFFFFF', weight: 'bold', size: 'md' },
+              { type: 'text', text: label, color: '#FFD0A0', size: 'sm', margin: 'xs' },
+            ],
+          },
+          body: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              {
+                type: 'box', layout: 'horizontal', contents: [
+                  { type: 'text', text: holding.code, weight: 'bold', size: 'xl', flex: 0 },
+                  { type: 'text', text: holding.name, color: '#666666', margin: 'sm', gravity: 'bottom', size: 'sm' },
+                ],
+              },
+              { type: 'separator', margin: 'md' },
+              {
+                type: 'box', layout: 'vertical', margin: 'md', spacing: 'sm',
+                contents: [
+                  { type: 'box', layout: 'horizontal', contents: [
+                    { type: 'text', text: '除息日', color: '#888888', size: 'sm', flex: 3 },
+                    { type: 'text', text: exDate, size: 'sm', flex: 5, align: 'end' },
+                  ]},
+                  { type: 'box', layout: 'horizontal', contents: [
+                    { type: 'text', text: '每股現金', color: '#888888', size: 'sm', flex: 3 },
+                    { type: 'text', text: `${cash} 元`, size: 'sm', flex: 5, align: 'end', color: '#E8660A' },
+                  ]},
+                  { type: 'box', layout: 'horizontal', contents: [
+                    { type: 'text', text: '持有股數', color: '#888888', size: 'sm', flex: 3 },
+                    { type: 'text', text: `${holding.shares} 股`, size: 'sm', flex: 5, align: 'end' },
+                  ]},
+                  { type: 'box', layout: 'horizontal', contents: [
+                    { type: 'text', text: '預計領取', color: '#888888', size: 'sm', flex: 3 },
+                    { type: 'text', text: `${est} 元`, size: 'sm', weight: 'bold', flex: 5, align: 'end', color: '#27AE60' },
+                  ]},
+                ],
+              },
+            ],
+          },
+          footer: {
+            type: 'box',
+            layout: 'vertical',
+            spacing: 'sm',
+            contents: [
+              {
+                type: 'button',
+                style: 'secondary',
+                height: 'sm',
+                action: {
+                  type: 'postback',
+                  label: '關閉此股提醒',
+                  data: `action=disable_reminder&code=${holding.code}&name=${encodeURIComponent(holding.name)}`,
+                  displayText: `關閉 ${holding.code} ${holding.name} 的配息提醒`,
+                },
+              },
+              {
+                type: 'button',
+                style: 'primary',
+                height: 'sm',
+                color: '#E8660A',
+                action: { type: 'uri', label: '開啟配息紀錄', uri: webUrl },
+              },
+            ],
+          },
+        }
+      })
+
+      const flexMsg = bubbles.length === 1
+        ? { type: 'flex', altText: `📅 配息提醒（${toRemind.length} 支股票即將除息）`, contents: bubbles[0] }
+        : { type: 'flex', altText: `📅 配息提醒（${toRemind.length} 支股票即將除息）`, contents: { type: 'carousel', contents: bubbles } }
 
       try {
-        await client.pushMessage({ to: user.line_user_id, messages: [{ type: 'text', text: msg }] })
+        await client.pushMessage({ to: user.line_user_id, messages: [flexMsg] })
         pushed++
       } catch {}
     }

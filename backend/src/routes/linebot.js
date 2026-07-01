@@ -742,11 +742,34 @@ router.post('/set-default-richmenu', async (req, res) => {
   }
 })
 
+async function handlePostback(event) {
+  const client = getClient()
+  const lineUserId = event.source.userId
+  const params = new URLSearchParams(event.postback.data)
+  const action = params.get('action')
+
+  if (action === 'disable_reminder') {
+    const code = params.get('code')
+    const name = decodeURIComponent(params.get('name') || '')
+    const user = await findOrCreateUser(client, lineUserId)
+
+    await db.query(
+      `INSERT INTO dividend_notify_settings (user_id, scope, enabled, remind_days_before)
+       VALUES ($1, $2, false, NULL)
+       ON CONFLICT (user_id, scope) DO UPDATE SET enabled = false`,
+      [user.id, code]
+    )
+
+    return reply(client, event.replyToken, `已關閉 ${code} ${name} 的配息提醒\n\n如要重新開啟，輸入「提醒 ${code} 開啟」`)
+  }
+}
+
 router.post('/webhook', middleware(lineConfig), (req, res) => {
   const events = req.body.events
   Promise.all(events.map(e => {
     if (e.type === 'follow') return handleFollow(e)
     if (e.type === 'message' && e.message.type === 'text') return handleMessage(e)
+    if (e.type === 'postback') return handlePostback(e)
   }))
     .then(() => res.json({ ok: true }))
     .catch(e => res.status(500).json({ error: e.message }))
