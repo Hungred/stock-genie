@@ -35,7 +35,9 @@ onMounted(async () => {
 })
 
 function openWeb() {
-  liff.openWindow({ url: WEB_URL, external: true })
+  const token = localStorage.getItem('sg_token')
+  const url = token ? `${WEB_URL}?sg_token=${token}` : WEB_URL
+  liff.openWindow({ url, external: true })
 }
 </script>
 
