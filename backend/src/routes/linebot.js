@@ -93,7 +93,7 @@ function buildStockFlex(code, quote, holding) {
     ? `${quote.changePercent >= 0 ? '+' : ''}${quote.changePercent.toFixed(2)}%`
     : ''
 
-  const chartUrl = `${API_URL}/api/charts/kline?code=${code}`
+  const chartUrl = `${API_URL}/api/charts/kline?code=${code}&t=${Date.now()}`
 
   const bodyContents = [
     // 今日走勢圖
@@ -486,7 +486,7 @@ async function handleMessage(event) {
     const code = advMatch[1].toUpperCase()
     const mode = advMatch[2]
     if (mode === 'K線') {
-      const chartUrl = `${API_URL}/api/charts/kline?code=${code}`
+      const chartUrl = `${API_URL}/api/charts/kline?code=${code}&t=${Date.now()}`
       return client.replyMessage({
         replyToken: event.replyToken,
         messages: [{ type: 'image', originalContentUrl: chartUrl, previewImageUrl: chartUrl, quickReply: QUICK_REPLY }],
