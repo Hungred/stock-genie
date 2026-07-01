@@ -81,13 +81,28 @@ export async function getFullQuote(code) {
 
 export async function getIntradayCandles(code) {
   try {
-    const symbol = code.toUpperCase()
-    const url = `https://api.fugle.tw/marketdata/v1.0/stock/intraday/candles/${symbol}`
-    const { data } = await axios.get(url, { headers: { 'X-API-KEY': FUGLE_API_KEY } })
-    console.log('[candles] keys:', Object.keys(data), 'candles?', Array.isArray(data.candles), 'len:', data.candles?.length)
-    return data.candles ?? []
+    // Yahoo Finance 免費分鐘 K 線（不需 API key）
+    const symbol = `${code.toUpperCase()}.TW`
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=5m&range=1d&includePrePost=false`
+    const { data } = await axios.get(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+    })
+    const result = data?.chart?.result?.[0]
+    if (!result) return []
+    const timestamps = result.timestamp ?? []
+    const q = result.indicators?.quote?.[0] ?? {}
+    return timestamps
+      .map((ts, i) => ({
+        date: new Date(ts * 1000).toISOString(),
+        open: q.open?.[i],
+        high: q.high?.[i],
+        low: q.low?.[i],
+        close: q.close?.[i],
+        volume: q.volume?.[i],
+      }))
+      .filter(c => c.close != null)
   } catch (e) {
-    console.error('[candles] error:', e.response?.status, e.response?.data ?? e.message)
+    console.error('[candles] yahoo error:', e.message)
     return []
   }
 }
