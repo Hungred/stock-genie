@@ -79,6 +79,17 @@ export async function getFullQuote(code) {
   }
 }
 
+export async function getIntradayCandles(code) {
+  try {
+    const symbol = code.toUpperCase()
+    const url = `https://api.fugle.tw/marketdata/v1.0/stock/intraday/candles/${symbol}`
+    const { data } = await axios.get(url, { headers: { 'X-API-KEY': FUGLE_API_KEY } })
+    return data.candles ?? []
+  } catch {
+    return []
+  }
+}
+
 export async function getMultiplePrices(codes) {
   const results = {}
   await Promise.all(

@@ -93,10 +93,21 @@ function buildStockFlex(code, quote, holding) {
     ? `${quote.changePercent >= 0 ? '+' : ''}${quote.changePercent.toFixed(2)}%`
     : ''
 
+  const chartUrl = `${API_URL}/api/charts/kline?code=${code}`
+
   const bodyContents = [
+    // 今日走勢圖
+    {
+      type: 'image',
+      url: chartUrl,
+      size: 'full',
+      aspectRatio: '20:9',
+      aspectMode: 'fit',
+    },
+    { type: 'separator', margin: 'md' },
     // 開高低量（4 欄）
     {
-      type: 'box', layout: 'horizontal', spacing: 'none',
+      type: 'box', layout: 'horizontal', spacing: 'none', margin: 'md',
       contents: [
         {
           type: 'box', layout: 'vertical', flex: 1, spacing: 'xs',
@@ -171,7 +182,6 @@ function buildStockFlex(code, quote, holding) {
 
   return {
     type: 'bubble',
-    size: 'kilo',
     header: {
       type: 'box', layout: 'vertical', paddingAll: '12px',
       backgroundColor: '#f8f9fa',
@@ -182,19 +192,19 @@ function buildStockFlex(code, quote, holding) {
             {
               type: 'box', layout: 'vertical', flex: 1,
               contents: [
-                { type: 'text', text: quote.name || code, weight: 'bold', size: 'md', color: '#1a1a1a' },
+                { type: 'text', text: quote.name || code, weight: 'bold', size: 'lg', color: '#1a1a1a' },
                 { type: 'text', text: code, size: 'xxs', color: '#999999', margin: 'xs' },
               ],
             },
             {
               type: 'box', layout: 'vertical', alignItems: 'flex-end',
               contents: [
-                { type: 'text', text: priceStr, weight: 'bold', size: 'xl', color: changeColor },
+                { type: 'text', text: priceStr, weight: 'bold', size: 'xxl', color: changeColor },
                 {
                   type: 'box', layout: 'horizontal', spacing: 'xs',
                   contents: [
-                    { type: 'text', text: arrowStr, size: 'xxs', color: changeColor },
-                    { type: 'text', text: pctStr, size: 'xxs', color: changeColor },
+                    { type: 'text', text: arrowStr, size: 'xs', color: changeColor },
+                    { type: 'text', text: pctStr, size: 'xs', color: changeColor },
                   ],
                 },
               ],
@@ -203,24 +213,30 @@ function buildStockFlex(code, quote, holding) {
         },
         {
           type: 'text',
-          text: `更新 ${quote.updatedAt ?? ''}`,
+          text: `股價更新時間 ${quote.updatedAt ?? ''}`,
           size: 'xxs', color: '#bbbbbb', margin: 'sm',
         },
       ],
     },
     body: {
-      type: 'box', layout: 'vertical', paddingAll: '12px', spacing: 'md',
+      type: 'box', layout: 'vertical', paddingAll: '12px', spacing: 'none',
       contents: bodyContents,
     },
     footer: {
       type: 'box', layout: 'vertical', spacing: 'xs', paddingAll: '8px',
       contents: [
-        // 上排：4 個資訊按鈕
+        // 上排：即時 / K線
         {
           type: 'box', layout: 'horizontal', spacing: 'xs',
           contents: [
             { type: 'button', action: { type: 'message', label: '即時', text: code }, style: 'secondary', height: 'sm', flex: 1 },
             { type: 'button', action: { type: 'message', label: 'K線', text: `${code} K線` }, style: 'secondary', height: 'sm', flex: 1 },
+          ],
+        },
+        // 中排：EPS / 股利
+        {
+          type: 'box', layout: 'horizontal', spacing: 'xs',
+          contents: [
             { type: 'button', action: { type: 'message', label: 'EPS', text: `${code} EPS` }, style: 'secondary', height: 'sm', flex: 1 },
             { type: 'button', action: { type: 'message', label: '股利', text: `${code} 股利` }, style: 'secondary', height: 'sm', flex: 1 },
           ],
@@ -464,11 +480,18 @@ async function handleMessage(event) {
     return reply(client, event.replyToken, `✅ 清單「${name}」已刪除`)
   }
 
-  // K線 / EPS / 股利（佔位）
+  // K線 / EPS / 股利
   const advMatch = text.match(/^(\d{4,6}[ab]?)\s+(K線|EPS|股利)$/i)
   if (advMatch) {
     const code = advMatch[1].toUpperCase()
     const mode = advMatch[2]
+    if (mode === 'K線') {
+      const chartUrl = `${API_URL}/api/charts/kline?code=${code}`
+      return client.replyMessage({
+        replyToken: event.replyToken,
+        messages: [{ type: 'image', originalContentUrl: chartUrl, previewImageUrl: chartUrl, quickReply: QUICK_REPLY }],
+      })
+    }
     return reply(client, event.replyToken, `${code} ${mode}\n\n此功能即將推出，敬請期待 🚀`)
   }
 

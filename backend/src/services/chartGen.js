@@ -1,6 +1,70 @@
 import * as echarts from 'echarts'
 import sharp from 'sharp'
 
+export async function generateKlineChart(candles, prevClose) {
+  const W = 800, H = 360
+
+  const times = candles.map(c => {
+    const t = new Date(c.date)
+    const h = String(t.getUTCHours() + 8).padStart(2, '0')
+    const m = String(t.getUTCMinutes()).padStart(2, '0')
+    return `${h}:${m}`
+  })
+  const prices = candles.map(c => c.close)
+  const lastPrice = prices[prices.length - 1] ?? prevClose
+  const lineColor = lastPrice != null && prevClose != null && lastPrice >= prevClose ? '#e03131' : '#2f9e44'
+  const areaColor = lastPrice != null && prevClose != null && lastPrice >= prevClose
+    ? 'rgba(224,49,49,0.12)' : 'rgba(47,158,68,0.12)'
+
+  const chart = echarts.init(null, null, { renderer: 'svg', ssr: true, width: W, height: H })
+  chart.setOption({
+    backgroundColor: '#ffffff',
+    grid: { left: 52, right: 16, top: 16, bottom: 36 },
+    xAxis: {
+      type: 'category',
+      data: times,
+      boundaryGap: false,
+      axisLabel: {
+        fontSize: 11, color: '#9ca3af',
+        interval: Math.floor(times.length / 4),
+      },
+      axisLine: { lineStyle: { color: '#e5e7eb' } },
+      splitLine: { show: false },
+    },
+    yAxis: {
+      type: 'value',
+      scale: true,
+      axisLabel: { fontSize: 11, color: '#6b7280' },
+      splitLine: { lineStyle: { color: '#f3f4f6' } },
+    },
+    series: [
+      // 昨收參考線
+      ...(prevClose != null ? [{
+        type: 'line', markLine: {
+          silent: true, symbol: 'none',
+          data: [{ yAxis: prevClose }],
+          lineStyle: { type: 'dashed', color: '#9ca3af', width: 1 },
+          label: { formatter: `${prevClose}`, color: '#9ca3af', fontSize: 10 },
+        },
+        data: [], z: 0,
+      }] : []),
+      // 價格折線 + 面積
+      {
+        type: 'line',
+        data: prices,
+        showSymbol: false,
+        lineStyle: { color: lineColor, width: 2 },
+        areaStyle: { color: areaColor },
+        z: 1,
+      },
+    ],
+  })
+
+  const svg = chart.renderToSVGString()
+  chart.dispose()
+  return sharp(Buffer.from(svg)).resize(W, H).png().toBuffer()
+}
+
 async function svgToPng(svgStr, width, height) {
   return sharp(Buffer.from(svgStr)).resize(width, height).png().toBuffer()
 }
