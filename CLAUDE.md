@@ -35,9 +35,11 @@ cd backend && node scripts/generate-richmenu.js
 | `routes/dividends.js` | 配息 CRUD |
 | `routes/watchlist.js` | 自選清單 CRUD（`/api/watchlist`） |
 | `routes/linebot.js` | LINE Webhook、Bot 指令、`/setup-richmenu`、`/set-default-richmenu` |
-| `routes/charts.js` | 產生圓餅圖/長條圖圖片（chartjs-node-canvas） |
-| `services/stockPrice.js` | Fugle API 股價查詢（含 `isMarketOpen()`、`getFullQuote()`） |
+| `routes/charts.js` | 產生圓餅圖/長條圖/K線圖（`GET /api/charts/kline?code=XXXX`） |
+| `services/stockPrice.js` | Fugle API 股價查詢（含 `isMarketOpen()`、`getFullQuote()`、`getIntradayCandles()`） |
 | `services/portfolio.js` | 持股損益計算邏輯（`calcHoldings`） |
+| `services/chartGen.js` | echarts SSR → SVG → PNG，`generateKlineChart(candles, prevClose)` |
+| `services/dividendSchedule.js` | TWSE 資料解析（`processTwseData`）、提醒設定（`getNotifySettings`）、日期工具 |
 
 ### 前端 `frontend/src/`
 
@@ -160,7 +162,7 @@ watchlist_stocks (id SERIAL, watchlist_id INTEGER, code TEXT, name TEXT, sort_or
 
 ## Quick Reply（每則 Bot 回覆底部）
 
-5 個按鈕：📊 損益 / 📋 持股 / ⭐ 自選 / 👤 我的帳號 / 🖥️ 開啟網頁
+6 個按鈕：📊 損益 / 📋 持股 / ⭐ 自選 / 📅 近期配息 / ⚙️ 提醒設定 / 🖥️ 開啟網頁
 
 ## 環境變數
 
@@ -237,16 +239,28 @@ watchlist_stocks (id SERIAL, watchlist_id INTEGER, code TEXT, name TEXT, sort_or
 
 | 端點 | 時間 | 功能 |
 |------|------|------|
-| `POST /api/dividends/sync` | 08:00 台灣時間（週一至週五） | 抓 TWSE 未來 60 天除權息 |
-| `POST /api/dividends/send-reminders` | 08:30 台灣時間 | 推播今日提醒 |
+| `POST /api/dividends/sync-data` | 08:00 台灣時間（週一至週五） | 接收 GitHub Actions 傳來的 TWSE JSON，寫入 DB |
+| `POST /api/dividends/send-reminders` | 08:30 台灣時間 | 推播今日提醒（Flex Message） |
 | `POST /api/dividends/auto-create` | 14:30 台灣時間 | 除息日自動建配息記錄 |
+
+> **重要**：TWSE 封鎖 Render（美國）IP，sync 改由 **GitHub Actions 直接抓 TWSE**，再 POST 資料到 `/sync-data`。
 
 ### 環境變數（新增）
 - `CRON_SECRET`：排程端點驗證 secret，Render 後端 + GitHub Actions Secrets 都要設
 
 ### GitHub Actions
 `.github/workflows/dividend-cron.yml`：三個 job 各自對應上方時間
-支援 `workflow_dispatch` 手動觸發（選 sync / send-reminders / auto-create）
+- `sync` job：runner 自行 curl TWSE，取得 JSON 後 POST 到 `/api/dividends/sync-data`
+- 支援 `workflow_dispatch` 手動觸發（選 sync / send-reminders / auto-create）
+
+### 配息提醒 Flex Message（push 訊息）
+- 每支股票一張 bubble，多支時為 Carousel（左右滑動）
+- Header：橘色背景，顯示「N 天後除息 / 明天除息今天是最後買進日」
+- Body：股票代號名稱、除息日、每股現金、持有股數、預計領取金額
+- Footer（垂直兩個按鈕）：
+  - 「關閉此股提醒」→ postback `action=disable_reminder&code=XXXX&name=...`
+  - 「開啟配息紀錄」→ URI `WEB_URL/dividends`
+- Postback handler 在 `linebot.js` `handlePostback()`，寫入 `dividend_notify_settings` 並回覆確認
 
 ### 前端異動
 - `Dividends.vue`：顯示近期除息卡片、auto 記錄黃標 + 編輯 dialog
