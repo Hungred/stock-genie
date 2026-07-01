@@ -408,7 +408,7 @@ async function handleMessage(event) {
         }
       }
     }
-    msg += '\n\n─────────────\n提醒開啟／關閉\n提醒天數 3\n提醒 0050 開啟／關閉\n提醒 0050 5天'
+    msg += '\n\n─────────────\n可用指令：\n• 提醒開啟\n• 提醒關閉\n• 提醒天數 3\n• 提醒 0050 開啟\n• 提醒 0050 關閉\n• 提醒 0050 5天'
     return reply(client, event.replyToken, msg)
   }
 
