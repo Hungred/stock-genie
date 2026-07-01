@@ -33,9 +33,10 @@ cd backend && node scripts/generate-richmenu.js
 | `routes/transactions.js` | 交易 CRUD |
 | `routes/holdings.js` | 持股計算（含即時股價） |
 | `routes/dividends.js` | 配息 CRUD |
+| `routes/watchlist.js` | 自選清單 CRUD（`/api/watchlist`） |
 | `routes/linebot.js` | LINE Webhook、Bot 指令、`/setup-richmenu`、`/set-default-richmenu` |
 | `routes/charts.js` | 產生圓餅圖/長條圖圖片（chartjs-node-canvas） |
-| `services/stockPrice.js` | Fugle API 股價查詢 |
+| `services/stockPrice.js` | Fugle API 股價查詢（含 `isMarketOpen()`、`getFullQuote()`） |
 | `services/portfolio.js` | 持股損益計算邏輯（`calcHoldings`） |
 
 ### 前端 `frontend/src/`
@@ -46,11 +47,13 @@ cd backend && node scripts/generate-richmenu.js
 | `router/index.js` | 路由設定，`meta.requiresAuth` + navigation guard |
 | `stores/auth.js` | Pinia auth store（token、displayName、logout） |
 | `stores/portfolio.js` | Pinia portfolio store（holdings、transactions、dividends，含 delete/add 操作） |
-| `views/Login.vue` | LINE OAuth 登入頁（`/login`），使用 `VITE_LINE_LOGIN_CHANNEL_ID` |
-| `views/Liff.vue` | LIFF SDK 登入頁（`/liff`），使用 `VITE_LIFF_ID` |
+| `stores/watchlist.js` | Pinia watchlist store（fetchLists、fetchStocks、addStock、removeStock、fetchHoldings） |
+| `views/Login.vue` | LINE OAuth 登入頁（`/login`） |
+| `views/Liff.vue` | LIFF SDK 登入頁（`/liff`），登入後帶 `?sg_token=` 跳外部瀏覽器 |
 | `views/Dashboard.vue` | 總覽儀表板 |
 | `views/Holdings.vue` | 持股明細與圖表 |
-| `views/Transactions.vue` | 交易記錄，支援多筆新增、刪除（含確認 dialog） |
+| `views/Watchlist.vue` | 自選清單（`/watchlist`），含我的持股 tab、多清單管理、加入/移除股票 |
+| `views/Transactions.vue` | 交易記錄，支援多筆新增、刪除 |
 | `views/Dividends.vue` | 配息記錄，支援多筆新增（輸入代號自動帶名稱/股數）、刪除 |
 
 ## 資料庫 Schema（PostgreSQL / Supabase）
@@ -59,11 +62,14 @@ cd backend && node scripts/generate-richmenu.js
 users (id SERIAL, line_user_id TEXT UNIQUE, display_name TEXT, created_at TIMESTAMPTZ)
 transactions (id SERIAL, user_id INTEGER, date TEXT, code TEXT, name TEXT, category TEXT, type TEXT, shares INTEGER, price NUMERIC, fee NUMERIC, created_at TIMESTAMPTZ)
 dividends (id SERIAL, user_id INTEGER, date TEXT, code TEXT, name TEXT, dividend_per_share NUMERIC, shares INTEGER, amount NUMERIC, created_at TIMESTAMPTZ)
+watchlists (id SERIAL, user_id INTEGER, name TEXT, sort_order INTEGER, created_at TIMESTAMPTZ, UNIQUE(user_id, name))
+watchlist_stocks (id SERIAL, watchlist_id INTEGER, code TEXT, name TEXT, sort_order INTEGER, created_at TIMESTAMPTZ, UNIQUE(watchlist_id, code))
 ```
 
 - 所有資料表以 `user_id` 隔離，LINE Bot 依 `line_user_id` 對應同一 user
 - pg 回傳的 NUMERIC 欄位型別為字串，取值時需 `Number(t.price)` 轉換
 - 連線設定：`DATABASE_URL` 環境變數，Supabase 需加 `ssl: { rejectUnauthorized: false }`
+- 每位使用者預設有「我的最愛」清單（`ensureDefaultList` 自動建立，不可刪除）
 
 ## 身分驗證
 
@@ -76,32 +82,85 @@ dividends (id SERIAL, user_id INTEGER, date TEXT, code TEXT, name TEXT, dividend
 1. 使用者點選單「我的帳號」或輸入「綁定」→ 開啟 `https://liff.line.me/<LIFF_ID>`
 2. LIFF SDK 自動登入 → `Liff.vue` 取得 ID Token（需 `VITE_LIFF_ID`）
 3. 送 `/api/auth/liff`（需後端 `LINE_LOGIN_CHANNEL_ID`）→ 驗證 token → 建帳號 → 回傳 JWT
-4. 存入 `localStorage('sg_token')` → 點「開啟網頁版」進入 Dashboard
+4. 點「開啟網頁版」→ 外部瀏覽器 `?sg_token=<jwt>` → router 存入 localStorage
 
 - JWT 存 `localStorage('sg_token')`，`main.js` 的 axios interceptor 自動帶入
 - 後端所有資料 API 都套用 `authMiddleware`
 - Navigation guard 在 router 中，未登入自動跳轉 `/login`
 - 登出：桌機 navbar 右側文字按鈕；手機 navbar 右側 `SwitchButton` 圖示按鈕
 
-## LINE Bot 邏輯
+## LINE Bot 指令
 
-- Webhook 路徑：`POST /api/linebot/webhook`（`express.raw` 處理 signature 驗證）
-- 指令：損益、持股、綁定/登入/我的帳號、買/賣、配息、股票代號查詢
-- 圖表透過 `/api/charts/pie?token=<jwt>` 和 `/api/charts/bar?token=<jwt>` 取得
-- Bot 指令會自動建立 user 記錄（依 LINE User ID）
-- 輸入「綁定」→ Bot 回覆 LIFF URL（`https://liff.line.me/<LIFF_ID>`）
+### 查詢
+| 輸入 | 功能 |
+|------|------|
+| `損益` | 全部持股損益 + 長條圖 |
+| `持股` | 持股清單 + 圓餅圖 |
+| `0050`（股票代號） | Flex Message 股票卡片（含持倉損益） |
+| `0050 K線 / EPS / 股利` | 即將推出（佔位回覆） |
+
+### 自選清單
+| 輸入 | 功能 |
+|------|------|
+| `自選` | 顯示所有清單 |
+| `自選 我的最愛` | 清單股票 + 現價 |
+| `自選 持股` | 持倉股票 + 現價漲跌 |
+| `加自選 0050` | 加入我的最愛 |
+| `加自選 0050 清單名` | 加入指定清單 |
+| `移自選 0050` | 從我的最愛移除 |
+| `新增清單 清單名` | 建立新清單 |
+| `刪除清單 清單名` | 刪除清單（不可刪我的最愛） |
+
+### 交易與配息
+| 輸入 | 功能 |
+|------|------|
+| `買 0050 100 145.2` | 新增買進（可加日期、費用） |
+| `賣 0050 50 160` | 新增賣出 |
+| `配息 0050 1.5 255` | 新增配息記錄 |
+| 支援換行多筆 | 一次輸入多行批次新增 |
+
+日期格式：`今天 / 昨天 / 前天 / 大前天 / YYYY-MM-DD`（不填預設今天）
+
+### 其他
+| 輸入 | 功能 |
+|------|------|
+| `綁定 / 登入 / 我的帳號` | 回覆 LIFF 綁定連結 |
+| `指令說明 / 說明 / help` | 顯示完整指令說明 |
+
+## Flex Message 股票卡片
+
+- `buildStockFlex(code, quote, holding)` 在 `linebot.js` 中定義
+- Header：股名、代號、現價、漲跌
+- Body：開/高/低/量；若有持倉顯示持股數、均成本、損益
+- Footer 5 個按鈕：即時 / K線 / EPS / 股利 / +自選
+- 開高低量來自 `getFullQuote()`（`stockPrice.js`）
+
+## 股價服務（`stockPrice.js`）
+
+- `isMarketOpen()`：台灣市場時間 UTC+8，週一至五 09:00–13:30
+- `resolvePrice(data)`：開盤中用 `lastPrice`，收盤後用 `closePrice`
+- `getFullQuote(code)`：回傳 `{name, price, prevClose, change, changePercent, open, high, low, volumeLots, isOpen}`
+- `getMultiplePrices(codes)`：批次取多檔股價，回傳 `{code: price}` 物件
 
 ## Rich Menu
 
-- 4 格橫排（2500×843px）：損益查詢 / 持股明細 / 我的帳號 / 開啟網頁
+- **6 格（2×3）2500×1686px**：
+  - 上排：損益查詢 / 持股明細 / 自選清單
+  - 下排：我的帳號 / 開啟網頁 / 指令說明
 - 圖片 `backend/richmenu.png` 在本機（macOS）用 `generate-richmenu.js` 產生後 commit
   - Render 伺服器沒有 CJK 字型，不能在 Render 上產生
 - `setup-richmenu` endpoint（`POST /api/linebot/setup-richmenu`）：
-  1. 建立 Rich Menu（4 個 area，「我的帳號」用 LIFF URL）
+  1. 建立 Rich Menu（6 個 area）
   2. 上傳 `backend/richmenu.png` 圖片
   3. 設為 default
 - `set-default-richmenu` endpoint（`POST /api/linebot/set-default-richmenu`）：
   - 接受 `{ richMenuId }` → 設指定選單為 default（一次性維運用途）
+
+> **部署後需呼叫一次** `POST /api/linebot/setup-richmenu` 重設選單。
+
+## Quick Reply（每則 Bot 回覆底部）
+
+5 個按鈕：📊 損益 / 📋 持股 / ⭐ 自選 / 👤 我的帳號 / 🖥️ 開啟網頁
 
 ## 環境變數
 
@@ -135,6 +194,7 @@ dividends (id SERIAL, user_id INTEGER, date TEXT, code TEXT, name TEXT, dividend
 - Render 靜態站台需在 **Redirects/Rewrites** 設 `/* → /index.html (Rewrite)` 才能支援 Vue Router
 - LINE Login Channel 的 Callback URL 需加 `https://stock-genie-web.onrender.com/login`
 - LIFF Endpoint URL：`https://stock-genie-web.onrender.com/liff`
+- **每次部署後** 呼叫 `POST /api/linebot/setup-richmenu` 重建 Rich Menu（確保 LIFF_ID 已設定）
 
 ## 注意事項
 
@@ -143,9 +203,10 @@ dividends (id SERIAL, user_id INTEGER, date TEXT, code TEXT, name TEXT, dividend
 - Fugle API 有速率限制，`stockPrice.js` 有簡單快取
 - `charts.js` 用 `chartjs-node-canvas` 產生圖片，中文字需確認字型
 - 環境變數一定要設 `JWT_SECRET`，否則 default 是 `changeme-set-in-env`
+- Render free tier 冷啟動 30–60 秒，LINE reply token 30 秒過期，建議用 UptimeRobot 每 14 分鐘 ping 防止休眠
 
 ## Git 慣例
 
 - commit 訊息不加 `Co-Authored-By`
 - 改檔案前先說明並確認
-- 每次完成功能後更新 CLAUDE.md 和 README.md
+- 每次完成功能後更新 CLAUDE.md

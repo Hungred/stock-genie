@@ -41,6 +41,25 @@ export async function initDb() {
       amount NUMERIC NOT NULL,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS watchlists (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(user_id, name)
+    );
+
+    CREATE TABLE IF NOT EXISTS watchlist_stocks (
+      id SERIAL PRIMARY KEY,
+      watchlist_id INTEGER REFERENCES watchlists(id) ON DELETE CASCADE,
+      code TEXT NOT NULL,
+      name TEXT DEFAULT '',
+      sort_order INTEGER DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(watchlist_id, code)
+    );
   `)
 }
 

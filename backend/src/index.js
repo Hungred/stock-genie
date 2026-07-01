@@ -8,6 +8,7 @@ import dividendsRouter from './routes/dividends.js'
 import linebotRouter from './routes/linebot.js'
 import chartsRouter from './routes/charts.js'
 import authRouter from './routes/auth.js'
+import watchlistRouter from './routes/watchlist.js'
 
 await initDb()
 
@@ -33,6 +34,7 @@ app.use('/api/holdings', holdingsRouter)
 app.use('/api/dividends', dividendsRouter)
 app.use('/api/linebot', linebotRouter)
 app.use('/api/charts', chartsRouter)
+app.use('/api/watchlist', watchlistRouter)
 
 app.listen(PORT, () => {
   console.log(`🚀 股小秘後端啟動 port ${PORT}`)

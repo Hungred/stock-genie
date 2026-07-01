@@ -5,10 +5,12 @@ import Transactions from '../views/Transactions.vue'
 import Dividends from '../views/Dividends.vue'
 import Login from '../views/Login.vue'
 import Liff from '../views/Liff.vue'
+import Watchlist from '../views/Watchlist.vue'
 
 const routes = [
   { path: '/', name: 'Dashboard', component: Dashboard, meta: { requiresAuth: true } },
   { path: '/holdings', name: 'Holdings', component: Holdings, meta: { requiresAuth: true } },
+  { path: '/watchlist', name: 'Watchlist', component: Watchlist, meta: { requiresAuth: true } },
   { path: '/transactions', name: 'Transactions', component: Transactions, meta: { requiresAuth: true } },
   { path: '/dividends', name: 'Dividends', component: Dividends, meta: { requiresAuth: true } },
   { path: '/login', name: 'Login', component: Login },

@@ -12,6 +12,7 @@ const showNav = computed(() => !['Login', 'Liff'].includes(route.name))
 const navItems = [
   { path: '/', label: '總覽', icon: 'DataLine' },
   { path: '/holdings', label: '持股', icon: 'PieChart' },
+  { path: '/watchlist', label: '自選', icon: 'Star' },
   { path: '/transactions', label: '交易', icon: 'List' },
   { path: '/dividends', label: '配息', icon: 'Money' },
 ]
