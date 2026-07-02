@@ -27,25 +27,29 @@ app.get('/api/stock/search', async (req, res) => {
   if (!q) return res.status(400).json({ error: 'q required' })
   const { getStockInfo } = await import('./services/stockPrice.js')
   const { default: axios } = await import('axios')
+  const FUGLE_KEY = process.env.FUGLE_API_KEY
 
-  // 先試代號
+  // 先試代號（Fugle quote）
   const info = await getStockInfo(q)
   if (info.name) return res.json({ code: q.toUpperCase(), name: info.name })
 
-  // 用 Yahoo Finance 搜尋（支援中文名稱）
-  try {
-    const { data } = await axios.get(
-      `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&lang=zh-TW&region=TW&quotesCount=5&newsCount=0`,
-      { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 5000 }
-    )
-    const hit = (data?.quotes ?? []).find(q => q.exchange === 'TAI' || q.exchange === 'TWO')
-    if (hit) {
-      const code = hit.symbol.replace(/\.(TW|TWO)$/, '')
-      return res.json({ code, name: hit.shortname || hit.longname || code })
+  // 再試 Fugle tickers 名稱搜尋（TWSE + TPEx）
+  if (FUGLE_KEY) {
+    for (const exchange of ['TWSE', 'TPEx']) {
+      try {
+        const { data } = await axios.get(
+          `https://api.fugle.tw/marketdata/v1.0/stock/intraday/tickers?type=EQUITY&exchange=${exchange}&query=${encodeURIComponent(q)}`,
+          { headers: { 'X-API-KEY': FUGLE_KEY }, timeout: 5000 }
+        )
+        const items = data?.data ?? []
+        if (items.length) {
+          return res.json({ code: items[0].symbol, name: items[0].name })
+        }
+      } catch {}
     }
-  } catch {}
+  }
 
-  res.status(404).json({ error: '找不到此股票' })
+  res.status(404).json({ error: '找不到此股票，請改用股票代號（如 0050）' })
 })
 
 app.get('/api/stock/:code', async (req, res) => {
