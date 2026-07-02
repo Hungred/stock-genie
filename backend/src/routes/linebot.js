@@ -34,6 +34,7 @@ const QUICK_REPLY = {
     { type: 'action', action: { type: 'message', label: '⭐ 自選', text: '自選' } },
     { type: 'action', action: { type: 'message', label: '📅 近期配息', text: '近期配息' } },
     { type: 'action', action: { type: 'message', label: '⚙️ 提醒設定', text: '提醒設定' } },
+    { type: 'action', action: { type: 'message', label: '📖 指令說明', text: '指令說明' } },
     { type: 'action', action: { type: 'uri', label: '🖥️ 開啟網頁', uri: WEB_URL } },
   ],
 }

@@ -29,8 +29,8 @@ export const useWatchlistStore = defineStore('watchlist', () => {
     return data
   }
 
-  async function addStock(listId, code) {
-    await axios.post(`${API}/api/watchlist/${listId}/stocks`, { code })
+  async function addStock(listId, code, name) {
+    await axios.post(`${API}/api/watchlist/${listId}/stocks`, { code, name })
   }
 
   async function removeStock(listId, code) {

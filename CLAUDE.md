@@ -38,7 +38,7 @@ cd backend && node scripts/generate-richmenu.js
 | `routes/charts.js` | 產生圓餅圖/長條圖/K線圖（`GET /api/charts/kline?code=XXXX`） |
 | `services/stockPrice.js` | Fugle API 股價查詢（含 `isMarketOpen()`、`getFullQuote()`、`getIntradayCandles()`） |
 | `services/portfolio.js` | 持股損益計算邏輯（`calcHoldings`） |
-| `services/chartGen.js` | echarts SSR → SVG → PNG，`generateKlineChart(candles, prevClose)` |
+| `services/chartGen.js` | echarts SSR → SVG → PNG，`generateKlineChart(candles)` 日K蠟燭圖 |
 | `services/dividendSchedule.js` | TWSE 資料解析（`processTwseData`）、提醒設定（`getNotifySettings`）、日期工具 |
 
 ### 前端 `frontend/src/`
@@ -54,7 +54,7 @@ cd backend && node scripts/generate-richmenu.js
 | `views/Liff.vue` | LIFF SDK 登入頁（`/liff`），登入後帶 `?sg_token=` 跳外部瀏覽器 |
 | `views/Dashboard.vue` | 總覽儀表板 |
 | `views/Holdings.vue` | 持股明細與圖表 |
-| `views/Watchlist.vue` | 自選清單（`/watchlist`），含我的持股 tab、多清單管理、加入/移除股票 |
+| `views/Watchlist.vue` | 自選清單（`/watchlist`），含我的持股 tab、多清單管理、查詢驗證後加入（支援代號或中文名稱）/移除股票 |
 | `views/Transactions.vue` | 交易記錄，支援多筆新增、刪除 |
 | `views/Dividends.vue` | 配息記錄、近期除息、提醒設定（折疊區塊）、配息歷史 |
 
@@ -142,6 +142,7 @@ watchlist_stocks (id SERIAL, watchlist_id INTEGER, code TEXT, name TEXT, sort_or
 - `isMarketOpen()`：台灣市場時間 UTC+8，週一至五 09:00–13:30
 - `resolvePrice(data)`：開盤中用 `lastPrice`，收盤後用 `closePrice`
 - `getFullQuote(code)`：回傳 `{name, price, prevClose, change, changePercent, open, high, low, volumeLots, isOpen}`
+- `getDailyCandles(code)`：Yahoo Finance 近 3 個月日線 OHLC（免費）
 - `getMultiplePrices(codes)`：批次取多檔股價，回傳 `{code: price}` 物件
 
 ## Rich Menu
@@ -162,7 +163,7 @@ watchlist_stocks (id SERIAL, watchlist_id INTEGER, code TEXT, name TEXT, sort_or
 
 ## Quick Reply（每則 Bot 回覆底部）
 
-6 個按鈕：📊 損益 / 📋 持股 / ⭐ 自選 / 📅 近期配息 / ⚙️ 提醒設定 / 🖥️ 開啟網頁
+7 個按鈕：📊 損益 / 📋 持股 / ⭐ 自選 / 📅 近期配息 / ⚙️ 提醒設定 / 📖 指令說明 / 🖥️ 開啟網頁
 
 ## 環境變數
 

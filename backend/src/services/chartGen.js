@@ -1,32 +1,27 @@
 import * as echarts from 'echarts'
 import sharp from 'sharp'
 
-export async function generateKlineChart(candles, prevClose) {
-  const W = 800, H = 360
+// 日K蠟燭圖（3個月）
+export async function generateKlineChart(candles) {
+  const W = 800, H = 400
+  if (!candles.length) return sharp({ create: { width: W, height: H, channels: 3, background: '#ffffff' } }).png().toBuffer()
 
-  const times = candles.map(c => {
-    const t = new Date(c.date)
-    const h = String(t.getUTCHours() + 8).padStart(2, '0')
-    const m = String(t.getUTCMinutes()).padStart(2, '0')
-    return `${h}:${m}`
-  })
-  const prices = candles.map(c => c.close)
-  const lastPrice = prices[prices.length - 1] ?? prevClose
-  const lineColor = lastPrice != null && prevClose != null && lastPrice >= prevClose ? '#e03131' : '#2f9e44'
-  const areaColor = lastPrice != null && prevClose != null && lastPrice >= prevClose
-    ? 'rgba(224,49,49,0.12)' : 'rgba(47,158,68,0.12)'
+  const dates = candles.map(c => c.date.slice(5)) // MM-DD
+  const data = candles.map(c => [c.open, c.close, c.low, c.high])
 
   const chart = echarts.init(null, null, { renderer: 'svg', ssr: true, width: W, height: H })
   chart.setOption({
     backgroundColor: '#ffffff',
-    grid: { left: 52, right: 16, top: 16, bottom: 36 },
+    grid: { left: 60, right: 16, top: 24, bottom: 48 },
     xAxis: {
       type: 'category',
-      data: times,
-      boundaryGap: false,
+      data: dates,
+      scale: true,
+      boundaryGap: true,
       axisLabel: {
-        fontSize: 11, color: '#9ca3af',
-        interval: Math.floor(times.length / 4),
+        fontSize: 10, color: '#9ca3af',
+        interval: Math.floor(dates.length / 5),
+        rotate: 30,
       },
       axisLine: { lineStyle: { color: '#e5e7eb' } },
       splitLine: { show: false },
@@ -37,27 +32,16 @@ export async function generateKlineChart(candles, prevClose) {
       axisLabel: { fontSize: 11, color: '#6b7280' },
       splitLine: { lineStyle: { color: '#f3f4f6' } },
     },
-    series: [
-      // 昨收參考線
-      ...(prevClose != null ? [{
-        type: 'line', markLine: {
-          silent: true, symbol: 'none',
-          data: [{ yAxis: prevClose }],
-          lineStyle: { type: 'dashed', color: '#9ca3af', width: 1 },
-          label: { formatter: `${prevClose}`, color: '#9ca3af', fontSize: 10 },
-        },
-        data: [], z: 0,
-      }] : []),
-      // 價格折線 + 面積
-      {
-        type: 'line',
-        data: prices,
-        showSymbol: false,
-        lineStyle: { color: lineColor, width: 2 },
-        areaStyle: { color: areaColor },
-        z: 1,
+    series: [{
+      type: 'candlestick',
+      data,
+      itemStyle: {
+        color: '#e03131',        // 上漲 實體顏色（紅）
+        color0: '#2f9e44',       // 下跌 實體顏色（綠）
+        borderColor: '#e03131',  // 上漲 邊框
+        borderColor0: '#2f9e44', // 下跌 邊框
       },
-    ],
+    }],
   })
 
   const svg = chart.renderToSVGString()

@@ -2,13 +2,19 @@
 import { ref, onMounted, watch } from 'vue'
 import { useWatchlistStore } from '../stores/watchlist'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import axios from 'axios'
+
+const API = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 const store = useWatchlistStore()
 
 const activeTab = ref('holdings')
 const stocks = ref([])
 const loadingStocks = ref(false)
-const addCode = ref('')
+const addQuery = ref('')
+const searchResult = ref(null)   // { code, name } | null
+const searchError = ref('')
+const searching = ref(false)
 const addingStock = ref(false)
 const newListName = ref('')
 const creatingList = ref(false)
@@ -36,22 +42,45 @@ async function loadTab(tab) {
   }
 }
 
+async function handleSearch() {
+  const q = addQuery.value.trim()
+  if (!q) return
+  searching.value = true
+  searchResult.value = null
+  searchError.value = ''
+  try {
+    const { data } = await axios.get(`${API}/api/stock/search?q=${encodeURIComponent(q)}`)
+    searchResult.value = data
+  } catch (e) {
+    searchError.value = e.response?.data?.error || '找不到此股票'
+  } finally {
+    searching.value = false
+  }
+}
+
 async function handleAddStock() {
-  const code = addCode.value.trim().toUpperCase()
-  if (!code) return
+  if (!searchResult.value) return
   if (activeTab.value === 'holdings') return ElMessage.warning('我的持股為自動計算，無法手動新增')
   addingStock.value = true
   try {
-    await store.addStock(activeTab.value, code)
-    addCode.value = ''
+    await store.addStock(activeTab.value, searchResult.value.code, searchResult.value.name)
+    addQuery.value = ''
+    searchResult.value = null
+    searchError.value = ''
     await loadTab(activeTab.value)
     await store.fetchLists()
-    ElMessage.success(`${code} 已加入清單`)
+    ElMessage.success(`${searchResult.value?.code ?? ''} 已加入清單`)
   } catch (e) {
     ElMessage.error(e.response?.data?.error || '新增失敗')
   } finally {
     addingStock.value = false
   }
+}
+
+function clearSearch() {
+  addQuery.value = ''
+  searchResult.value = null
+  searchError.value = ''
 }
 
 async function handleRemoveStock(code) {
@@ -179,15 +208,28 @@ function formatChangePct(item) {
       </div>
 
       <!-- 新增股票欄（持股 tab 隱藏） -->
-      <div v-if="activeTab !== 'holdings'" class="p-3 border-b border-gray-100 flex gap-2">
-        <el-input
-          v-model="addCode"
-          placeholder="輸入股票代號（如 0050）"
-          size="small"
-          class="max-w-xs"
-          @keyup.enter="handleAddStock"
-        />
-        <el-button type="primary" size="small" :loading="addingStock" @click="handleAddStock">加入</el-button>
+      <div v-if="activeTab !== 'holdings'" class="p-3 border-b border-gray-100 space-y-2">
+        <div class="flex gap-2">
+          <el-input
+            v-model="addQuery"
+            placeholder="輸入代號或名稱（如 0050、台積電）"
+            size="small"
+            class="max-w-xs"
+            clearable
+            @clear="clearSearch"
+          />
+          <el-button size="small" :loading="searching" @click="handleSearch">查詢</el-button>
+        </div>
+        <!-- 查詢結果 -->
+        <div v-if="searchResult" class="flex items-center gap-3 px-3 py-2 bg-green-50 border border-green-200 rounded-lg">
+          <el-icon class="text-green-500"><CircleCheck /></el-icon>
+          <span class="font-semibold text-gray-800 text-sm">{{ searchResult.code }}</span>
+          <span class="text-gray-500 text-sm">{{ searchResult.name }}</span>
+          <el-button type="primary" size="small" :loading="addingStock" @click="handleAddStock" class="ml-auto">加入清單</el-button>
+        </div>
+        <div v-if="searchError" class="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-500">
+          <el-icon><CircleClose /></el-icon>{{ searchError }}
+        </div>
       </div>
 
       <!-- 股票列表 桌機 -->

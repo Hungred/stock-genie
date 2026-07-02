@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { calcHoldings } from '../services/portfolio.js'
-import { getMultiplePrices, getIntradayCandles, getFullQuote } from '../services/stockPrice.js'
+import { getMultiplePrices, getDailyCandles } from '../services/stockPrice.js'
 import { generatePieChart, generateBarChart, generateKlineChart } from '../services/chartGen.js'
 import { authMiddleware } from '../middleware/auth.js'
 
@@ -41,16 +41,13 @@ router.get('/bar', authMiddleware, async (req, res) => {
   }
 })
 
-// K線走勢圖（不需要認證，股價為公開資料）
+// 日K蠟燭圖（不需要認證，股價為公開資料）
 router.get('/kline', async (req, res) => {
   const code = req.query.code?.toUpperCase()
   if (!code) return res.status(400).json({ error: 'code required' })
   try {
-    const [candles, quote] = await Promise.all([
-      getIntradayCandles(code),
-      getFullQuote(code),
-    ])
-    const png = await generateKlineChart(candles, quote?.prevClose)
+    const candles = await getDailyCandles(code)
+    const png = await generateKlineChart(candles)
     res.set('Content-Type', 'image/png')
     res.set('Cache-Control', 'no-cache')
     res.send(png)
