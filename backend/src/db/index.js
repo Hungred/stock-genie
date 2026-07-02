@@ -82,6 +82,14 @@ export async function initDb() {
     );
 
     ALTER TABLE dividends ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'manual';
+
+    CREATE TABLE IF NOT EXISTS stocks (
+      code TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      exchange TEXT DEFAULT 'TWSE',
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_stocks_name ON stocks(name);
   `)
 }
 

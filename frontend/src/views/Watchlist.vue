@@ -12,7 +12,7 @@ const activeTab = ref('holdings')
 const stocks = ref([])
 const loadingStocks = ref(false)
 const addQuery = ref('')
-const searchResult = ref(null)   // { code, name } | null
+const searchResults = ref([])    // [{ code, name }]
 const searchError = ref('')
 const searching = ref(false)
 const addingStock = ref(false)
@@ -46,30 +46,30 @@ async function handleSearch() {
   const q = addQuery.value.trim()
   if (!q) return
   searching.value = true
-  searchResult.value = null
+  searchResults.value = []
   searchError.value = ''
   try {
     const { data } = await axios.get(`${API}/api/stock/search?q=${encodeURIComponent(q)}`)
-    searchResult.value = data
+    searchResults.value = data
   } catch (e) {
-    searchError.value = e.response?.data?.error || '找不到此股票'
+    searchError.value = e.response?.data?.error || '找不到相關股票'
   } finally {
     searching.value = false
   }
 }
 
-async function handleAddStock() {
-  if (!searchResult.value) return
+async function handleAddStock(stock) {
+  if (!stock) return
   if (activeTab.value === 'holdings') return ElMessage.warning('我的持股為自動計算，無法手動新增')
   addingStock.value = true
   try {
-    await store.addStock(activeTab.value, searchResult.value.code, searchResult.value.name)
+    await store.addStock(activeTab.value, stock.code, stock.name)
     addQuery.value = ''
-    searchResult.value = null
+    searchResults.value = []
     searchError.value = ''
     await loadTab(activeTab.value)
     await store.fetchLists()
-    ElMessage.success(`${searchResult.value?.code ?? ''} 已加入清單`)
+    ElMessage.success(`${stock.code} ${stock.name} 已加入清單`)
   } catch (e) {
     ElMessage.error(e.response?.data?.error || '新增失敗')
   } finally {
@@ -79,7 +79,7 @@ async function handleAddStock() {
 
 function clearSearch() {
   addQuery.value = ''
-  searchResult.value = null
+  searchResults.value = []
   searchError.value = ''
 }
 
@@ -220,12 +220,17 @@ function formatChangePct(item) {
           />
           <el-button size="small" :loading="searching" @click="handleSearch">查詢</el-button>
         </div>
-        <!-- 查詢結果 -->
-        <div v-if="searchResult" class="flex items-center gap-3 px-3 py-2 bg-green-50 border border-green-200 rounded-lg">
-          <el-icon class="text-green-500"><CircleCheck /></el-icon>
-          <span class="font-semibold text-gray-800 text-sm">{{ searchResult.code }}</span>
-          <span class="text-gray-500 text-sm">{{ searchResult.name }}</span>
-          <el-button type="primary" size="small" :loading="addingStock" @click="handleAddStock" class="ml-auto">加入清單</el-button>
+        <!-- 查詢結果清單 -->
+        <div v-if="searchResults.length" class="border border-gray-200 rounded-lg overflow-hidden">
+          <div
+            v-for="stock in searchResults"
+            :key="stock.code"
+            class="flex items-center gap-3 px-3 py-2 bg-white hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+          >
+            <span class="font-semibold text-gray-800 text-sm w-16 flex-shrink-0">{{ stock.code }}</span>
+            <span class="text-gray-600 text-sm flex-1">{{ stock.name }}</span>
+            <el-button type="primary" size="small" :loading="addingStock" @click="handleAddStock(stock)">加入</el-button>
+          </div>
         </div>
         <div v-if="searchError" class="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-500">
           <el-icon><CircleClose /></el-icon>{{ searchError }}

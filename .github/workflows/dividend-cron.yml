@@ -8,6 +8,8 @@ on:
     - cron: '30 0 * * 1-5'
     # 每天 14:30 台灣時間（UTC 06:30）— 除息日自動建立配息記錄
     - cron: '30 6 * * 1-5'
+    # 每週一 09:00 台灣時間（UTC 01:00）— 更新股票清單
+    - cron: '0 1 * * 1'
   workflow_dispatch:
     inputs:
       action:
@@ -19,6 +21,7 @@ on:
           - sync
           - send-reminders
           - auto-create
+          - seed-stocks
 
 jobs:
   sync:
@@ -67,3 +70,65 @@ jobs:
           curl -s -X POST "${{ secrets.API_URL }}/api/dividends/auto-create" \
             -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
             -w "\nHTTP %{http_code}"
+
+  seed-stocks:
+    name: 更新台股清單
+    runs-on: ubuntu-latest
+    if: >
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'seed-stocks') ||
+      (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 1')
+    steps:
+      - name: 抓 TWSE + TPEx 股票清單並 seed 進 DB
+        run: |
+          python3 << 'EOF'
+          import urllib.request, json
+          from html.parser import HTMLParser
+
+          class TableParser(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.rows = []
+                  self.current_row = []
+                  self.in_td = False
+              def handle_starttag(self, tag, attrs):
+                  if tag == 'tr': self.current_row = []
+                  if tag == 'td': self.in_td = True
+              def handle_endtag(self, tag):
+                  if tag == 'tr' and self.current_row: self.rows.append(self.current_row[:])
+                  if tag == 'td': self.in_td = False
+              def handle_data(self, data):
+                  if self.in_td: self.current_row.append(data.strip())
+
+          def fetch_stocks(mode, exchange):
+              url = f'https://isin.twse.com.tw/isin/C_public.jsp?strMode={mode}'
+              req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  html = r.read().decode('big5', errors='ignore')
+              p = TableParser()
+              p.feed(html)
+              stocks = []
+              for row in p.rows:
+                  if not row or '　' not in row[0]: continue
+                  parts = row[0].split('　', 1)
+                  code, name = parts[0].strip(), parts[1].strip()
+                  if not code.isdigit() and not (code[:4].isdigit()): continue
+                  stocks.append({'code': code, 'name': name, 'exchange': exchange})
+              return stocks
+
+          stocks = fetch_stocks(2, 'TWSE') + fetch_stocks(4, 'TPEx')
+          print(f'Total stocks: {len(stocks)}')
+
+          import os, subprocess
+          data = json.dumps(stocks)
+          result = subprocess.run([
+              'curl', '-s', '-X', 'POST',
+              f'{os.environ["API_URL"]}/api/stocks/seed',
+              '-H', 'Content-Type: application/json',
+              '-H', f'x-cron-secret: {os.environ["CRON_SECRET"]}',
+              '-d', data, '-w', '\nHTTP %{http_code}'
+          ], capture_output=True, text=True, env=os.environ)
+          print(result.stdout)
+          EOF
+        env:
+          API_URL: ${{ secrets.API_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
