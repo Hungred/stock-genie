@@ -27,6 +27,70 @@ async function handleDelete(row) {
 const showDialog = ref(false)
 const submitting = ref(false)
 
+// 截圖匯入
+const showImportDialog = ref(false)
+const importFile = ref(null)
+const importPreview = ref('')
+const analyzing = ref(false)
+const importStocks = ref([])
+const importDate = ref(new Date().toISOString().slice(0, 10))
+const importing = ref(false)
+
+function onFileChange(e) {
+  const file = e.target.files[0]
+  if (!file) return
+  importFile.value = file
+  importPreview.value = URL.createObjectURL(file)
+  importStocks.value = []
+}
+
+async function handleAnalyze() {
+  if (!importFile.value) return ElMessage.warning('請先選擇圖片')
+  analyzing.value = true
+  importStocks.value = []
+  try {
+    const form = new FormData()
+    form.append('image', importFile.value)
+    const { data } = await axios.post(`${API}/api/import/analyze`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    if (!data.length) return ElMessage.warning('未辨識到持股資料，請確認圖片是否清晰')
+    importStocks.value = data
+  } catch (e) {
+    ElMessage.error(e.response?.data?.error || '辨識失敗，請再試一次')
+  } finally {
+    analyzing.value = false
+  }
+}
+
+async function handleImportConfirm() {
+  if (!importStocks.value.length) return
+  importing.value = true
+  try {
+    const { data } = await axios.post(`${API}/api/import/confirm`, {
+      stocks: importStocks.value,
+      date: importDate.value,
+    })
+    const ok = data.results.filter(r => r.ok).length
+    ElMessage.success(`成功匯入 ${ok} 筆持股`)
+    showImportDialog.value = false
+    importFile.value = null
+    importPreview.value = ''
+    importStocks.value = []
+    store.fetchTransactions()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.error || '匯入失敗')
+  } finally {
+    importing.value = false
+  }
+}
+
+function resetImport() {
+  importFile.value = null
+  importPreview.value = ''
+  importStocks.value = []
+}
+
 function emptyRow() {
   return {
     date: new Date().toISOString().slice(0, 10),
@@ -93,9 +157,14 @@ onMounted(() => store.fetchTransactions())
   <div>
     <div class="flex items-center justify-between mb-4 md:mb-6">
       <h1 class="text-xl md:text-2xl font-bold text-gray-800">交易記錄</h1>
-      <el-button type="primary" @click="showDialog = true">
-        <el-icon class="mr-1"><Plus /></el-icon>新增交易
-      </el-button>
+      <div class="flex gap-2">
+        <el-button @click="showImportDialog = true; resetImport()">
+          📷 截圖匯入
+        </el-button>
+        <el-button type="primary" @click="showDialog = true">
+          <el-icon class="mr-1"><Plus /></el-icon>新增交易
+        </el-button>
+      </div>
     </div>
 
     <div class="bg-white rounded-xl shadow-sm border border-gray-100">
@@ -160,6 +229,80 @@ onMounted(() => store.fetchTransactions())
       </div>
 
     </div>
+
+    <!-- 截圖匯入 Dialog -->
+    <el-dialog v-model="showImportDialog" title="📷 截圖匯入持股" :width="'96vw'" style="max-width: 640px" @close="resetImport">
+
+      <!-- 上傳區 -->
+      <div class="space-y-4">
+        <div
+          class="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center cursor-pointer hover:border-blue-400 transition-colors"
+          @click="$refs.fileInput.click()"
+        >
+          <div v-if="!importPreview">
+            <div class="text-3xl mb-2">📷</div>
+            <div class="text-sm text-gray-500">點擊上傳券商持股截圖</div>
+            <div class="text-xs text-gray-400 mt-1">支援 JPG、PNG</div>
+          </div>
+          <img v-else :src="importPreview" class="max-h-48 mx-auto rounded-lg object-contain" />
+        </div>
+        <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="onFileChange" />
+
+        <el-button
+          v-if="importFile && !importStocks.length"
+          type="primary" class="w-full" :loading="analyzing"
+          @click="handleAnalyze"
+        >
+          {{ analyzing ? 'AI 辨識中...' : '開始辨識' }}
+        </el-button>
+
+        <!-- 辨識結果 -->
+        <div v-if="importStocks.length">
+          <div class="text-sm font-medium text-gray-700 mb-2">辨識結果（可修改後匯入）</div>
+
+          <div class="mb-3">
+            <div class="text-xs text-gray-500 mb-1">買入日期</div>
+            <el-date-picker v-model="importDate" type="date" value-format="YYYY-MM-DD" size="small" />
+          </div>
+
+          <div class="border rounded-lg overflow-hidden">
+            <table class="w-full text-sm">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th class="px-3 py-2 text-left text-xs text-gray-500">代號</th>
+                  <th class="px-3 py-2 text-left text-xs text-gray-500">名稱</th>
+                  <th class="px-3 py-2 text-right text-xs text-gray-500">股數</th>
+                  <th class="px-3 py-2 text-right text-xs text-gray-500">均價</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-100">
+                <tr v-for="(s, i) in importStocks" :key="i">
+                  <td class="px-3 py-2">
+                    <el-input v-model="s.code" size="small" class="w-20" />
+                  </td>
+                  <td class="px-3 py-2">
+                    <el-input v-model="s.name" size="small" />
+                  </td>
+                  <td class="px-3 py-2">
+                    <el-input-number v-model="s.shares" :min="1" size="small" class="w-24" />
+                  </td>
+                  <td class="px-3 py-2">
+                    <el-input-number v-model="s.price" :precision="2" :min="0" size="small" class="w-24" />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <el-button @click="showImportDialog = false">取消</el-button>
+        <el-button v-if="importStocks.length" type="primary" :loading="importing" @click="handleImportConfirm">
+          匯入 {{ importStocks.length }} 筆
+        </el-button>
+      </template>
+    </el-dialog>
 
     <!-- 新增交易 Dialog -->
     <el-dialog v-model="showDialog" title="新增交易記錄" :width="'96vw'" style="max-width: 720px">
