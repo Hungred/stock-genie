@@ -34,9 +34,8 @@ function logout() {
     <nav v-if="showNav" class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-10">
       <div class="max-w-6xl mx-auto px-4">
         <div class="flex items-center justify-between h-14">
-          <div class="flex items-center gap-2">
-            <span class="text-xl">📈</span>
-            <span class="font-bold text-gray-800 text-lg">股小秘</span>
+          <div class="flex items-center">
+            <img src="/logo.png" alt="股小秘" class="h-10 w-auto" />
           </div>
           <!-- 手機登出按鈕 -->
           <button
