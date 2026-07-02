@@ -17,7 +17,7 @@ if not FUGLE_KEY:
     sys.exit(1)
 
 def fetch_tickers(exchange):
-    url = f'https://api.fugle.tw/marketdata/v1.0/stock/intraday/tickers?type=EQUITY&exchange={exchange}&isNormal=true'
+    url = f'https://api.fugle.tw/marketdata/v1.0/stock/intraday/tickers?type=EQUITY&exchange={exchange}'
     req = urllib.request.Request(url, headers={'X-API-KEY': FUGLE_KEY})
     try:
         with urllib.request.urlopen(req, timeout=30) as r:

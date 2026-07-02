@@ -107,30 +107,34 @@ export async function getIntradayCandles(code) {
   }
 }
 
+async function fetchYahooCandles(symbol) {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=3mo`
+  const { data } = await axios.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+  const result = data?.chart?.result?.[0]
+  if (!result) return []
+  const timestamps = result.timestamp ?? []
+  const q = result.indicators?.quote?.[0] ?? {}
+  return timestamps
+    .map((ts, i) => ({
+      date: new Date(ts * 1000).toISOString().slice(0, 10),
+      open: q.open?.[i],
+      high: q.high?.[i],
+      low: q.low?.[i],
+      close: q.close?.[i],
+    }))
+    .filter(c => c.open != null && c.close != null)
+}
+
 export async function getDailyCandles(code) {
-  try {
-    const symbol = `${code.toUpperCase()}.TW`
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=3mo`
-    const { data } = await axios.get(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-    })
-    const result = data?.chart?.result?.[0]
-    if (!result) return []
-    const timestamps = result.timestamp ?? []
-    const q = result.indicators?.quote?.[0] ?? {}
-    return timestamps
-      .map((ts, i) => ({
-        date: new Date(ts * 1000).toISOString().slice(0, 10),
-        open: q.open?.[i],
-        high: q.high?.[i],
-        low: q.low?.[i],
-        close: q.close?.[i],
-      }))
-      .filter(c => c.open != null && c.close != null)
-  } catch (e) {
-    console.error('[daily-candles] error:', e.message)
-    return []
+  const upper = code.toUpperCase()
+  // 先試 .TW（上市），失敗再試 .TWO（上櫃）
+  for (const suffix of ['.TW', '.TWO']) {
+    try {
+      const candles = await fetchYahooCandles(`${upper}${suffix}`)
+      if (candles.length) return candles
+    } catch {}
   }
+  return []
 }
 
 export async function getMultiplePrices(codes) {
