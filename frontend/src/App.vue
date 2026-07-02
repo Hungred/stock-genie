@@ -34,8 +34,12 @@ function logout() {
     <nav v-if="showNav" class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-10">
       <div class="max-w-6xl mx-auto px-4">
         <div class="flex items-center justify-between h-14">
-          <div class="flex items-center">
+          <div class="flex items-center gap-2">
             <img src="/logo.png" alt="股小秘" class="h-10 w-auto" />
+            <div class="leading-tight">
+              <div class="font-bold text-gray-800 text-base">股小秘</div>
+              <div class="text-xs text-gray-400 tracking-wide">Stock Genie</div>
+            </div>
           </div>
           <!-- 手機登出按鈕 -->
           <button
