@@ -36,7 +36,7 @@ cd backend && node scripts/generate-richmenu.js
 | `routes/watchlist.js` | 自選清單 CRUD（`/api/watchlist`） |
 | `routes/linebot.js` | LINE Webhook、Bot 指令、`/setup-richmenu`、`/set-default-richmenu` |
 | `routes/charts.js` | 產生圓餅圖/長條圖/K線圖（`GET /api/charts/kline?code=XXXX`） |
-| `services/stockPrice.js` | Fugle API 股價查詢（含 `isMarketOpen()`、`getFullQuote()`、`getIntradayCandles()`） |
+| `services/stockPrice.js` | Fugle API 股價查詢（含 `isMarketOpen()`、`getFullQuote()`、`getDailyCandles()`） |
 | `services/portfolio.js` | 持股損益計算邏輯（`calcHoldings`） |
 | `services/chartGen.js` | echarts SSR → SVG → PNG，`generateKlineChart(candles)` 日K蠟燭圖 |
 | `services/dividendSchedule.js` | TWSE 資料解析（`processTwseData`）、提醒設定（`getNotifySettings`）、日期工具 |
@@ -54,7 +54,7 @@ cd backend && node scripts/generate-richmenu.js
 | `views/Liff.vue` | LIFF SDK 登入頁（`/liff`），登入後帶 `?sg_token=` 跳外部瀏覽器 |
 | `views/Dashboard.vue` | 總覽儀表板 |
 | `views/Holdings.vue` | 持股明細與圖表 |
-| `views/Watchlist.vue` | 自選清單（`/watchlist`），含我的持股 tab、多清單管理、查詢驗證後加入（支援代號或中文名稱）/移除股票 |
+| `views/Watchlist.vue` | 自選清單（`/watchlist`），含我的持股 tab、多清單管理、查詢返回多筆清單供選擇（支援代號或中文名稱模糊搜尋）/移除股票 |
 | `views/Transactions.vue` | 交易記錄，支援多筆新增、刪除 |
 | `views/Dividends.vue` | 配息記錄、近期除息、提醒設定（折疊區塊）、配息歷史 |
 
@@ -66,6 +66,7 @@ transactions (id SERIAL, user_id INTEGER, date TEXT, code TEXT, name TEXT, categ
 dividends (id SERIAL, user_id INTEGER, date TEXT, code TEXT, name TEXT, dividend_per_share NUMERIC, shares INTEGER, amount NUMERIC, created_at TIMESTAMPTZ)
 watchlists (id SERIAL, user_id INTEGER, name TEXT, sort_order INTEGER, created_at TIMESTAMPTZ, UNIQUE(user_id, name))
 watchlist_stocks (id SERIAL, watchlist_id INTEGER, code TEXT, name TEXT, sort_order INTEGER, created_at TIMESTAMPTZ, UNIQUE(watchlist_id, code))
+stocks (code TEXT PRIMARY KEY, name TEXT, exchange TEXT, updated_at TIMESTAMPTZ)  -- 台股清單快取，每週一由 GitHub Actions seed
 ```
 
 - 所有資料表以 `user_id` 隔離，LINE Bot 依 `line_user_id` 對應同一 user
@@ -142,8 +143,16 @@ watchlist_stocks (id SERIAL, watchlist_id INTEGER, code TEXT, name TEXT, sort_or
 - `isMarketOpen()`：台灣市場時間 UTC+8，週一至五 09:00–13:30
 - `resolvePrice(data)`：開盤中用 `lastPrice`，收盤後用 `closePrice`
 - `getFullQuote(code)`：回傳 `{name, price, prevClose, change, changePercent, open, high, low, volumeLots, isOpen}`
-- `getDailyCandles(code)`：Yahoo Finance 近 3 個月日線 OHLC（免費）
+- `getDailyCandles(code)`：Yahoo Finance 近 3 個月日線 OHLC（免費，`interval=1d&range=3mo`）
 - `getMultiplePrices(codes)`：批次取多檔股價，回傳 `{code: price}` 物件
+
+## 股票搜尋（`GET /api/stock/search?q=`）
+
+- 回傳 **陣列**（多筆），前端顯示清單讓使用者點選
+- 搜尋優先順序：
+  1. 查 `stocks` 表：`name ILIKE '%q%' OR code ILIKE '%q%'`，代號前綴優先排序，最多 10 筆
+  2. Fallback（`stocks` 表為空時）：Fugle `getStockInfo` 查單一代號
+- `stocks` 表由每週一 GitHub Actions `seed-stocks` job 填充
 
 ## Rich Menu
 
@@ -244,6 +253,7 @@ watchlist_stocks (id SERIAL, watchlist_id INTEGER, code TEXT, name TEXT, sort_or
 | `POST /api/dividends/sync-data` | 08:00 台灣時間（週一至週五） | 接收 GitHub Actions 傳來的 TWSE JSON，寫入 DB |
 | `POST /api/dividends/send-reminders` | 08:30 台灣時間 | 推播今日提醒（Flex Message） |
 | `POST /api/dividends/auto-create` | 14:30 台灣時間 | 除息日自動建配息記錄 |
+| `POST /api/stocks/seed` | 每週一 09:00 台灣時間 | 接收 GitHub Actions 傳來的股票清單 JSON，upsert 進 `stocks` 表 |
 
 > **重要**：TWSE 封鎖 Render（美國）IP，sync 改由 **GitHub Actions 直接抓 TWSE**，再 POST 資料到 `/sync-data`。
 
@@ -253,7 +263,9 @@ watchlist_stocks (id SERIAL, watchlist_id INTEGER, code TEXT, name TEXT, sort_or
 ### GitHub Actions
 `.github/workflows/dividend-cron.yml`：三個 job 各自對應上方時間
 - `sync` job：runner 自行 curl TWSE，取得 JSON 後 POST 到 `/api/dividends/sync-data`
-- 支援 `workflow_dispatch` 手動觸發（選 sync / send-reminders / auto-create）
+- `seed-stocks` job：每週一執行 `scripts/seed-stocks.py`，從 Fugle tickers API 抓 TWSE + TPEx 股票清單（分批 500 筆），POST 到 `/api/stocks/seed`
+- 支援 `workflow_dispatch` 手動觸發（選 sync / send-reminders / auto-create / seed-stocks）
+- 需要 GitHub Secrets：`API_URL`、`CRON_SECRET`、`FUGLE_API_KEY`
 
 ### 配息提醒 Flex Message（push 訊息）
 - 每支股票一張 bubble，多支時為 Carousel（左右滑動）
