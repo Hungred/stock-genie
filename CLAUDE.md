@@ -206,6 +206,7 @@ watchlist_stocks (id SERIAL, watchlist_id INTEGER, code TEXT, name TEXT, sort_or
 - `charts.js` 用 `chartjs-node-canvas` 產生圖片，中文字需確認字型
 - 環境變數一定要設 `JWT_SECRET`，否則 default 是 `changeme-set-in-env`
 - Render free tier 冷啟動 30–60 秒，LINE reply token 30 秒過期，建議用 UptimeRobot 每 14 分鐘 ping 防止休眠
+- **Express 路由順序**：`/:id` 等參數路由必須放在所有具體路由（`/upcoming`、`/notify-settings` 等）**之後**，否則會攔截具體路由導致 500
 
 ## 配息提醒系統
 
